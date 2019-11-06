@@ -56,7 +56,7 @@ public class ZSet {
     }
 
     /**
-     * @return zset中的元素数量
+     * @return zset中的成员数量
      */
     public int count() {
         return zsl.length();
@@ -72,7 +72,7 @@ public class ZSet {
     // -------------------------------------------------------- insert -----------------------------------------------
 
     /**
-     * 往有序集合中新增一个元素。如果元素存在，则更新他的值。
+     * 往有序集合中新增一个成员。如果成员存在，则更新他的值。
      *
      * @param score  数据的评分
      * @param member 成员id
@@ -91,7 +91,7 @@ public class ZSet {
     }
 
     /**
-     * 增加指定元素对应的值，如果指定元素不存在，则假设之前的值是0。
+     * 增加指定成员对应的值，如果指定成员不存在，则假设之前的值是0。
      *
      * @param increment 要增加的值
      * @param member    成员id
@@ -107,7 +107,7 @@ public class ZSet {
     // -------------------------------------------------------- remove -----------------------------------------------
 
     /**
-     * 删除指定元素
+     * 删除指定成员
      *
      * @param member 成员id
      * @return 如果成员存在，则返回true，否则返回false
@@ -127,7 +127,7 @@ public class ZSet {
      *
      * @param min 最低分 inclusive
      * @param max 最高分 inclusive
-     * @return 删除的元素数目
+     * @return 删除的成员数目
      */
     public int zremrangeByScore(long min, long max) {
         return zremrangeByScore(new ZScoreRangeSpec(min, max));
@@ -137,16 +137,16 @@ public class ZSet {
      * 移除zset中所有score值在范围描述期间的成员
      *
      * @param spec score范围区间
-     * @return 删除的元素数目
+     * @return 删除的成员数目
      */
     public int zremrangeByScore(@Nonnull ZScoreRangeSpec spec) {
         return zsl.zslDeleteRangeByScore(spec, dict);
     }
 
     /**
-     * 删除指定排名范围的全部元素，start和end都是从0开始的。
-     * 排名0表示分数最小的元素。
-     * start和end都可以是负数，此时它们表示从最高排名元素开始的偏移量，eg: -1表示最高排名的元素， -2表示第二高分的元素，以此类推。
+     * 删除指定排名范围的全部成员，start和end都是从0开始的。
+     * 排名0表示分数最小的成员。
+     * start和end都可以是负数，此时它们表示从最高排名成员开始的偏移量，eg: -1表示最高排名的成员， -2表示第二高分的成员，以此类推。
      * <p>
      * Remove all elements in the sorted set at key with rank between start and end. Start and end are
      * 0-based with rank 0 being the element with the lowest score. Both start and end can be negative
@@ -159,7 +159,7 @@ public class ZSet {
      *
      * @param start 起始排名
      * @param end   截止排名
-     * @return 删除的元素数目
+     * @return 删除的成员数目
      */
     public int zremrangeByRank(int start, int end) {
         final int zslLength = zsl.length();
@@ -177,7 +177,7 @@ public class ZSet {
     /**
      * 转换起始排名
      *
-     * @param start     请求参数中的起始排名
+     * @param start     请求参数中的起始排名，0-based
      * @param zslLength 跳表的长度
      * @return 有效起始排名
      */
@@ -194,7 +194,7 @@ public class ZSet {
     /**
      * 转换截止排名
      *
-     * @param end       请求参数中的截止排名
+     * @param end       请求参数中的截止排名，0-based
      * @param zslLength 跳表的长度
      * @return 有效截止排名
      */
@@ -220,6 +220,34 @@ public class ZSet {
         /* Invariant: start >= 0, so this test will be true when end < 0.
          * The range is empty when start > end or start >= length. */
         return start > end || start >= zslLength;
+    }
+
+    /**
+     * 删除zset中尾部多余的成员，将zset中的成员数量限制到count之内。
+     * 保留前面的count个数成员
+     *
+     * @param count 剩余数量限制
+     * @return 删除的成员数量
+     */
+    public int zlimit(int count) {
+        if (zsl.length() <= count) {
+            return 0;
+        }
+        return zremrangeByRank(count, zsl.length() - 1);
+    }
+
+    /**
+     * 删除zset中头部多余的成员，将zset中的成员数量限制到count之内。
+     * - 保留后面的count个数成员
+     *
+     * @param count 剩余数量限制
+     * @return 删除的成员数量
+     */
+    public int zrevlimit(int count) {
+        if (zsl.length() <= count) {
+            return 0;
+        }
+        return zremrangeByRank(0, zsl.length() - 1 - count);
     }
     // -------------------------------------------------------- query -----------------------------------------------
 
@@ -309,7 +337,7 @@ public class ZSet {
      *
      * @param range   score范围描述信息
      * @param offset  偏移量(用于分页)  大于等于0
-     * @param limit   返回的元素数量(用于分页) 小于0表示不限制
+     * @param limit   返回的成员数量(用于分页) 小于0表示不限制
      * @param reverse 是否逆序
      * @return memberInfo
      */
@@ -371,8 +399,8 @@ public class ZSet {
     /**
      * 查询指定排名区间的成员id和分数，结果排名由低到高。
      * start和end都是从0开始的。
-     * 排名0表示分数最小的元素。
-     * start和end都可以是负数，此时它们表示从最高排名元素开始的偏移量，eg: -1表示最高排名的元素， -2表示第二高分的元素，以此类推。
+     * 排名0表示分数最小的成员。
+     * start和end都可以是负数，此时它们表示从最高排名成员开始的偏移量，eg: -1表示最高排名的成员， -2表示第二高分的成员，以此类推。
      *
      * @param start 起始排名 inclusive
      * @param end   截止排名 inclusive
@@ -385,8 +413,8 @@ public class ZSet {
     /**
      * 查询指定排名区间的成员id和分数，结果排名由高到低。
      * start和end都是从0开始的。
-     * 排名0表示分数最小的元素。
-     * start和end都可以是负数，此时它们表示从最高排名元素开始的偏移量，eg: -1表示最高排名的元素， -2表示第二高分的元素，以此类推。
+     * 排名0表示分数最小的成员。
+     * start和end都可以是负数，此时它们表示从最高排名成员开始的偏移量，eg: -1表示最高排名的成员， -2表示第二高分的成员，以此类推。
      *
      * @param start 起始排名 inclusive
      * @param end   截止排名 inclusive
@@ -398,8 +426,8 @@ public class ZSet {
 
     /**
      * 查询指定排名区间的成员id和分数，start和end都是从0开始的。
-     * 排名0表示分数最小的元素。
-     * start和end都可以是负数，此时它们表示从最高排名元素开始的偏移量，eg: -1表示最高排名的元素， -2表示第二高分的元素，以此类推。
+     * 排名0表示分数最小的成员。
+     * start和end都可以是负数，此时它们表示从最高排名成员开始的偏移量，eg: -1表示最高排名的成员， -2表示第二高分的成员，以此类推。
      *
      * @param start   起始排名 inclusive
      * @param end     截止排名 inclusive
@@ -480,7 +508,7 @@ public class ZSet {
         private SkipListNode tail;
 
         /**
-         * 跳表元素个数
+         * 跳表成员个数
          * 注意：head头指针不包含在length计数中。
          */
         private int length = 0;
@@ -496,7 +524,7 @@ public class ZSet {
 
         /**
          * 插入一个新的节点到跳表。
-         * 这里假定元素已经不存在（直到调用方执行该方法）。
+         * 这里假定成员已经不存在（直到调用方执行该方法）。
          * <p>
          * zslInsert a new node in the skiplist. Assumes the element does not already
          * exist (up to the caller to enforce that). The skiplist takes ownership
@@ -834,7 +862,7 @@ public class ZSet {
 
         /**
          * 删除指定分数区间的所有节点。
-         * <b>Note</b>: 该方法引用了ZSet的哈希表视图，以便从哈希表中删除元素。
+         * <b>Note</b>: 该方法引用了ZSet的哈希表视图，以便从哈希表中删除成员。
          * <p>
          * Delete all the elements with score between min and max from the skiplist.
          * Min and max are inclusive, so a score >= min || score <= max is deleted.
@@ -889,7 +917,7 @@ public class ZSet {
          */
         int zslDeleteRangeByRank(int start, int end, Map<String, Long> dict) {
             final SkipListNode[] update = new SkipListNode[this.level];
-            /* 已遍历的真实元素数量，表示元素的真实排名 */
+            /* 已遍历的真实成员数量，表示成员的真实排名 */
             int traversed = 0;
             int removed = 0;
 
@@ -897,7 +925,7 @@ public class ZSet {
             for (int i = this.level - 1; i >= 0; i--) {
                 while (lastNodeLtStartRank.levelInfo[i].forward != null && (traversed + lastNodeLtStartRank.levelInfo[i].span) < start) {
                     // 下一个节点的排名还未到范围内，继续前进
-                    // 更新已遍历的元素数量
+                    // 更新已遍历的成员数量
                     traversed += lastNodeLtStartRank.levelInfo[i].span;
                     lastNodeLtStartRank = lastNodeLtStartRank.levelInfo[i].forward;
                 }
@@ -919,8 +947,8 @@ public class ZSet {
         }
 
         /**
-         * 通过score和key查找元素所属的排名。
-         * 如果找不到对应的元素，则返回0。
+         * 通过score和key查找成员所属的排名。
+         * 如果找不到对应的成员，则返回0。
          * <b>Note</b>：排名从1开始
          * <p>
          * Find the rank for an element by both score and key.
@@ -954,7 +982,7 @@ public class ZSet {
         }
 
         /**
-         * 查找指定排名的元素数据，如果不存在，则返回Null。
+         * 查找指定排名的成员数据，如果不存在，则返回Null。
          * 注意：排名从1开始
          * <p>
          * Finds an element by its rank. The rank argument needs to be 1-based.
@@ -982,7 +1010,7 @@ public class ZSet {
         }
 
         /**
-         * @return 跳表中的元素数量
+         * @return 跳表中的成员数量
          */
         private int length() {
             return length;
@@ -1128,7 +1156,7 @@ public class ZSet {
         SkipListNode forward;
         /**
          * 到后继节点之间的跨度
-         * 它表示当前的指针跨越了多少个节点。span用于计算元素排名(rank)，这是Redis对于SkipList做的一个扩展。
+         * 它表示当前的指针跨越了多少个节点。span用于计算成员排名(rank)，这是Redis对于SkipList做的一个扩展。
          */
         int span;
     }
