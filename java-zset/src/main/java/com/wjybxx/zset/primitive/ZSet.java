@@ -1,4 +1,4 @@
-package com.wjybxx.zset;
+package com.wjybxx.zset.primitive;
 
 
 import javax.annotation.Nonnull;
@@ -17,7 +17,7 @@ import java.util.stream.IntStream;
  * <b>NOTE</b>：ZSET中的排名从0开始
  *
  * <p>
- * 这里只实现了jedis zset中的几个常用的接口，扩展不是太麻烦，可以自己根据需要实现。
+ * 这里只实现了redis zset中的几个常用的接口，扩展不是太麻烦，可以自己根据需要实现。
  *
  * @author wjybxx
  * @version 1.0
@@ -83,7 +83,7 @@ public class ZSet {
      */
     public long zincrby(long increment, @Nonnull String member) {
         final Long oldScore = dict.get(member);
-        final long score = (oldScore == null ? increment : (increment + oldScore));
+        final long score = oldScore == null ? increment : (increment + oldScore);
         zadd(score, member);
         return score;
     }
@@ -227,7 +227,7 @@ public class ZSet {
         if (score == null) {
             return -1;
         }
-        // zslGetRank 一定大于0
+        // 0 < zslGetRank <= size
         return zsl.zslGetRank(score, member) - 1;
     }
 
@@ -251,7 +251,7 @@ public class ZSet {
         if (score == null) {
             return -1;
         }
-        // zslGetRank 一定大于0
+        // 0 < zslGetRank <= size
         return count() - zsl.zslGetRank(score, member);
     }
 
@@ -262,7 +262,7 @@ public class ZSet {
      * @param member 成员id
      * @return score
      */
-    public Long zscore(String member) {
+    public Long zscore(@Nonnull String member) {
         return dict.get(member);
     }
 
@@ -479,78 +479,6 @@ public class ZSet {
         }
 
         /**
-         * 创建一个skipList的节点
-         *
-         * @param level 节点具有的层级 - {@link #zslRandomLevel()}
-         * @param score 成员分数
-         * @param obj   成员id
-         * @return node
-         */
-        private static SkipListNode zslCreateNode(int level, long score, String obj) {
-            final SkipListNode node = new SkipListNode(obj, score, new SkipListLevel[level]);
-            for (int index = 0; index < level; index++) {
-                node.levelInfo[index] = new SkipListLevel();
-            }
-            return node;
-        }
-
-        /**
-         * 返回一个随机的层级分配给即将插入的节点。
-         * 返回的层级值在 1 和 ZSKIPLIST_MAXLEVEL 之间（包含两者）。
-         * 具有类似幂次定律的分布，越高level返回的可能性更小。
-         * <p>
-         * Returns a random level for the new skiplist node we are going to create.
-         * The return value of this function is between 1 and ZSKIPLIST_MAXLEVEL
-         * (both inclusive), with a powerlaw-alike distribution where higher
-         * levels are less likely to be returned.
-         *
-         * @return level
-         */
-        private int zslRandomLevel() {
-            int level = 1;
-            while (level < ZSKIPLIST_MAXLEVEL && random.nextFloat() < ZSKIPLIST_P) {
-                level++;
-            }
-            return level;
-        }
-
-        /**
-         * 比较两个成员的key，<b>必须保证当且仅当两个键相等的时候返回0</b>
-         * 字符串带有这样的特性。
-         */
-        private static int compareObj(@Nonnull String objA, @Nonnull String objB) {
-            return objA.compareTo(objB);
-        }
-
-        /**
-         * 判断第一个对象是否小于第二个对象
-         *
-         * @return true/false
-         */
-        private static boolean objLtOther(String objA, String objB) {
-            return compareObj(objA, objB) < 0;
-        }
-
-        /**
-         * 判断两个对象是否相等
-         *
-         * @return true/false
-         */
-        private static boolean objEquals(String objA, String objB) {
-            // 不使用equals，而是使用compare
-            return compareObj(objA, objB) == 0;
-        }
-
-        /**
-         * 判断第一个对象是否小于等于第二个对象
-         *
-         * @return true/false
-         */
-        private static boolean objLteOther(String objA, String objB) {
-            return compareObj(objA, objB) <= 0;
-        }
-
-        /**
          * 插入一个新的节点到跳表。
          * 这里假定元素已经不存在（直到调用方执行该方法）。
          * <p>
@@ -601,7 +529,7 @@ public class ZSet {
 
                 while (preNode.levelInfo[i].forward != null &&
                         (preNode.levelInfo[i].forward.score < score ||
-                                (preNode.levelInfo[i].forward.score == score && objLtOther(preNode.levelInfo[i].forward.obj, obj)))) {
+                                (preNode.levelInfo[i].forward.score == score && objLessThan(preNode.levelInfo[i].forward.obj, obj)))) {
                     // preNode的后继节点仍然小于要插入的节点，需要继续前进，同时累计排名
                     rank[i] += preNode.levelInfo[i].span;
                     preNode = preNode.levelInfo[i].forward;
@@ -679,7 +607,7 @@ public class ZSet {
             for (int i = this.level - 1; i >= 0; i--) {
                 while (preNode.levelInfo[i].forward != null &&
                         (preNode.levelInfo[i].forward.score < score ||
-                                (preNode.levelInfo[i].forward.score == score && objLtOther(preNode.levelInfo[i].forward.obj, obj)))) {
+                                (preNode.levelInfo[i].forward.score == score && objLessThan(preNode.levelInfo[i].forward.obj, obj)))) {
                     // preNode的后继节点仍然小于要插入的节点，需要继续前进
                     preNode = preNode.levelInfo[i].forward;
                 }
@@ -994,7 +922,7 @@ public class ZSet {
             for (int i = this.level - 1; i >= 0; i--) {
                 while (firstNodeGteScore.levelInfo[i].forward != null &&
                         (firstNodeGteScore.levelInfo[i].forward.score < score ||
-                                (firstNodeGteScore.levelInfo[i].forward.score == score && objLteOther(firstNodeGteScore.levelInfo[i].forward.obj, obj)))) {
+                                (firstNodeGteScore.levelInfo[i].forward.score == score && objLessThanOrEquals(firstNodeGteScore.levelInfo[i].forward.obj, obj)))) {
                     // forward.obj <= obj 也继续前进，也就是我么期望如果score相同时，在目标节点停下来，这样rank也不必特殊处理
                     rank += firstNodeGteScore.levelInfo[i].span;
                     firstNodeGteScore = firstNodeGteScore.levelInfo[i].forward;
@@ -1045,6 +973,78 @@ public class ZSet {
         }
 
         /**
+         * 创建一个skipList的节点
+         *
+         * @param level 节点具有的层级 - {@link #zslRandomLevel()}
+         * @param score 成员分数
+         * @param obj   成员id
+         * @return node
+         */
+        private static SkipListNode zslCreateNode(int level, long score, String obj) {
+            final SkipListNode node = new SkipListNode(obj, score, new SkipListLevel[level]);
+            for (int index = 0; index < level; index++) {
+                node.levelInfo[index] = new SkipListLevel();
+            }
+            return node;
+        }
+
+        /**
+         * 返回一个随机的层级分配给即将插入的节点。
+         * 返回的层级值在 1 和 ZSKIPLIST_MAXLEVEL 之间（包含两者）。
+         * 具有类似幂次定律的分布，越高level返回的可能性更小。
+         * <p>
+         * Returns a random level for the new skiplist node we are going to create.
+         * The return value of this function is between 1 and ZSKIPLIST_MAXLEVEL
+         * (both inclusive), with a powerlaw-alike distribution where higher
+         * levels are less likely to be returned.
+         *
+         * @return level
+         */
+        private int zslRandomLevel() {
+            int level = 1;
+            while (level < ZSKIPLIST_MAXLEVEL && random.nextFloat() < ZSKIPLIST_P) {
+                level++;
+            }
+            return level;
+        }
+
+        /**
+         * 比较两个成员的key，
+         */
+        private static int compareObj(@Nonnull String objA, @Nonnull String objB) {
+            return objA.compareTo(objB);
+        }
+
+        /**
+         * 判断第一个对象是否小于第二个对象
+         *
+         * @return true/false
+         */
+        private static boolean objLessThan(String objA, String objB) {
+            return compareObj(objA, objB) < 0;
+        }
+
+        /**
+         * 判断两个对象是否相等，<b>必须保证当且仅当两个键相等的时候返回0</b>
+         * 字符串带有这样的特性。
+         *
+         * @return true/false
+         */
+        private static boolean objEquals(String objA, String objB) {
+            // 不使用equals，而是使用compare
+            return compareObj(objA, objB) == 0;
+        }
+
+        /**
+         * 判断第一个对象是否小于等于第二个对象
+         *
+         * @return true/false
+         */
+        private static boolean objLessThanOrEquals(String objA, String objB) {
+            return compareObj(objA, objB) <= 0;
+        }
+
+        /**
          * 获取跳表的堆内存视图
          *
          * @return string
@@ -1068,6 +1068,7 @@ public class ZSet {
             }
             return sb.append("]}").toString();
         }
+
     }
 
     /**
