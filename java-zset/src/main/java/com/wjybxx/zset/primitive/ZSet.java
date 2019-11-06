@@ -233,7 +233,7 @@ public class ZSet {
         if (zsl.length() <= count) {
             return 0;
         }
-        return zremrangeByRank(count, zsl.length() - 1);
+        return zsl.zslDeleteRangeByRank(1, zsl.length() - count, dict);
     }
 
     /**
@@ -296,7 +296,7 @@ public class ZSet {
             return -1;
         }
         // 0 < zslGetRank <= size
-        return count() - zsl.zslGetRank(score, member);
+        return zsl.length() - zsl.zslGetRank(score, member);
     }
 
     /**
@@ -468,6 +468,35 @@ public class ZSet {
         return result;
     }
 
+    /**
+     * 获取指定排名的成员数据
+     *
+     * @param rank 排名 0-based
+     * @return memver，如果不存在，则返回null
+     */
+    public Member zmemberByRank(int rank) {
+        if (rank < 0 || rank >= zsl.length()) {
+            return null;
+        }
+        final SkipListNode node = zsl.zslGetElementByRank(rank + 1);
+        assert null != node;
+        return new Member(node.obj, node.score);
+    }
+
+    /**
+     * 获取指定逆序排名的成员数据
+     *
+     * @param rank 排名 0-based
+     * @return memver，如果不存在，则返回null
+     */
+    public Member zrevmemberByRank(int rank) {
+        if (rank < 0 || rank >= zsl.length()) {
+            return null;
+        }
+        final SkipListNode node = zsl.zslGetElementByRank(zsl.length() - rank);
+        assert null != node;
+        return new Member(node.obj, node.score);
+    }
     // ------------------------------------------------------- 内部实现 ----------------------------------------
 
     /**
@@ -572,8 +601,7 @@ public class ZSet {
                 }
 
                 while (preNode.levelInfo[i].forward != null &&
-                        (preNode.levelInfo[i].forward.score < score ||
-                                (preNode.levelInfo[i].forward.score == score && objLessThan(preNode.levelInfo[i].forward.obj, obj)))) {
+                        compareScoreAndObj(preNode.levelInfo[i].forward, score, obj) < 0) {
                     // preNode的后继节点仍然小于要插入的节点，需要继续前进，同时累计排名
                     rank[i] += preNode.levelInfo[i].span;
                     preNode = preNode.levelInfo[i].forward;
@@ -650,9 +678,8 @@ public class ZSet {
             SkipListNode preNode = this.header;
             for (int i = this.level - 1; i >= 0; i--) {
                 while (preNode.levelInfo[i].forward != null &&
-                        (preNode.levelInfo[i].forward.score < score ||
-                                (preNode.levelInfo[i].forward.score == score && objLessThan(preNode.levelInfo[i].forward.obj, obj)))) {
-                    // preNode的后继节点仍然小于要插入的节点，需要继续前进
+                        compareScoreAndObj(preNode.levelInfo[i].forward, score, obj) < 0) {
+                    // preNode的后继节点仍然小于要删除的节点，需要继续前进
                     preNode = preNode.levelInfo[i].forward;
                 }
                 // 这是目标节点第i层的可能前驱节点
@@ -921,27 +948,28 @@ public class ZSet {
             int traversed = 0;
             int removed = 0;
 
-            SkipListNode lastNodeLtStartRank = this.header;
+            SkipListNode lastNodeLtStart = this.header;
             for (int i = this.level - 1; i >= 0; i--) {
-                while (lastNodeLtStartRank.levelInfo[i].forward != null && (traversed + lastNodeLtStartRank.levelInfo[i].span) < start) {
+                while (lastNodeLtStart.levelInfo[i].forward != null &&
+                        (traversed + lastNodeLtStart.levelInfo[i].span) < start) {
                     // 下一个节点的排名还未到范围内，继续前进
                     // 更新已遍历的成员数量
-                    traversed += lastNodeLtStartRank.levelInfo[i].span;
-                    lastNodeLtStartRank = lastNodeLtStartRank.levelInfo[i].forward;
+                    traversed += lastNodeLtStart.levelInfo[i].span;
+                    lastNodeLtStart = lastNodeLtStart.levelInfo[i].forward;
                 }
-                update[i] = lastNodeLtStartRank;
+                update[i] = lastNodeLtStart;
             }
 
             traversed++;
 
-            SkipListNode nodeGteStart = lastNodeLtStartRank.levelInfo[0].forward;
-            while (nodeGteStart != null && traversed <= end) {
-                final SkipListNode next = nodeGteStart.levelInfo[0].forward;
-                zslDeleteNode(nodeGteStart, update);
-                dict.remove(nodeGteStart.obj);
+            SkipListNode firstNodeGteStart = lastNodeLtStart.levelInfo[0].forward;
+            while (firstNodeGteStart != null && traversed <= end) {
+                final SkipListNode next = firstNodeGteStart.levelInfo[0].forward;
+                zslDeleteNode(firstNodeGteStart, update);
+                dict.remove(firstNodeGteStart.obj);
                 removed++;
                 traversed++;
-                nodeGteStart = next;
+                firstNodeGteStart = next;
             }
             return removed;
         }
@@ -965,9 +993,8 @@ public class ZSet {
             SkipListNode firstNodeGteScore = this.header;
             for (int i = this.level - 1; i >= 0; i--) {
                 while (firstNodeGteScore.levelInfo[i].forward != null &&
-                        (firstNodeGteScore.levelInfo[i].forward.score < score ||
-                                (firstNodeGteScore.levelInfo[i].forward.score == score && objLessThanOrEquals(firstNodeGteScore.levelInfo[i].forward.obj, obj)))) {
-                    // forward.obj <= obj 也继续前进，也就是我么期望如果score相同时，在目标节点停下来，这样rank也不必特殊处理
+                        compareScoreAndObj(firstNodeGteScore.levelInfo[i].forward, score, obj) <= 0) {
+                    // <= 也继续前进，也就是我们期望在目标节点停下来，这样rank也不必特殊处理
                     rank += firstNodeGteScore.levelInfo[i].span;
                     firstNodeGteScore = firstNodeGteScore.levelInfo[i].forward;
                 }
@@ -995,7 +1022,8 @@ public class ZSet {
             int traversed = 0;
             SkipListNode firstNodeGteRank = this.header;
             for (int i = this.level - 1; i >= 0; i--) {
-                while (firstNodeGteRank.levelInfo[i].forward != null && (traversed + firstNodeGteRank.levelInfo[i].span) <= rank) {
+                while (firstNodeGteRank.levelInfo[i].forward != null
+                        && (traversed + firstNodeGteRank.levelInfo[i].span) <= rank) {
                     // <= rank 表示我们期望在目标节点停下来
                     traversed += firstNodeGteRank.levelInfo[i].span;
                     firstNodeGteRank = firstNodeGteRank.levelInfo[i].forward;
@@ -1053,19 +1081,26 @@ public class ZSet {
         }
 
         /**
-         * 比较两个成员的key，
+         * 比较score和key的大小，分数作为第一排序条件，然后，相同分数的成员按照字典规则相对排序
+         *
+         * @param forward 后继节点
+         * @param score   分数
+         * @param obj     成员的键
+         * @return 0 表示equals
          */
-        private static int compareObj(@Nonnull String objA, @Nonnull String objB) {
-            return objA.compareTo(objB);
+        private static int compareScoreAndObj(SkipListNode forward, long score, String obj) {
+            if (forward.score == score) {
+                return compareObj(forward.obj, obj);
+            }
+            return (forward.score < score) ? -1 : 1;
         }
 
         /**
-         * 判断第一个对象是否小于第二个对象
-         *
-         * @return true/false
+         * 比较两个成员的key，<b>必须保证当且仅当两个键相等的时候返回0</b>
+         * 字符串带有这样的特性。
          */
-        private static boolean objLessThan(String objA, String objB) {
-            return compareObj(objA, objB) < 0;
+        private static int compareObj(@Nonnull String objA, @Nonnull String objB) {
+            return objA.compareTo(objB);
         }
 
         /**
@@ -1073,19 +1108,11 @@ public class ZSet {
          * 字符串带有这样的特性。
          *
          * @return true/false
+         * @apiNote 使用compare == 0判断相等
          */
         private static boolean objEquals(String objA, String objB) {
             // 不使用equals，而是使用compare
             return compareObj(objA, objB) == 0;
-        }
-
-        /**
-         * 判断第一个对象是否小于等于第二个对象
-         *
-         * @return true/false
-         */
-        private static boolean objLessThanOrEquals(String objA, String objB) {
-            return compareObj(objA, objB) <= 0;
         }
 
         /**

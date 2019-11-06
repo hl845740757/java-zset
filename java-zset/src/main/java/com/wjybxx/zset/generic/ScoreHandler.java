@@ -36,7 +36,7 @@ public interface ScoreHandler<T> extends Comparator<T> {
      *
      * @param o1 score
      * @param o2 score
-     * @return -1,0,1
+     * @return 0表示相等
      */
     @Override
     int compare(T o1, T o2);

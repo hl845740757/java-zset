@@ -34,6 +34,7 @@ import java.util.stream.IntStream;
  * 1. ZSET中的排名从0开始
  * 2. ZSET使用<b>键</b>的compare结果判断两个键是否相等，而不是equals方法，因此必须保证键不同时compare结果一定不为0。
  * 3. 又由于key需要存放于{@link HashMap}中，因此“相同”的key必须有相同的hashCode，且equals方法返回true。
+ * <b>key的关键属性最好是number或string</b>
  * 4. 请查看{@link ScoreHandler}中的注释事项。
  *
  * <p>e
@@ -290,7 +291,7 @@ public class GenericZSet<K, S> {
         if (zsl.length() <= count) {
             return 0;
         }
-        return zremrangeByRank(0, zsl.length() - 1 - count);
+        return zsl.zslDeleteRangeByRank(1, zsl.length() - count, dict);
     }
 
     // -------------------------------------------------------- query -----------------------------------------------
@@ -340,7 +341,7 @@ public class GenericZSet<K, S> {
             return -1;
         }
         // 0 < zslGetRank <= size
-        return count() - zsl.zslGetRank(score, member);
+        return zsl.length() - zsl.zslGetRank(score, member);
     }
 
     /**
@@ -512,6 +513,36 @@ public class GenericZSet<K, S> {
         return result;
     }
 
+    /**
+     * 获取指定排名的成员数据
+     *
+     * @param rank 排名 0-based
+     * @return memver，如果不存在，则返回null
+     */
+    public Member<K, S> zmemberByRank(int rank) {
+        if (rank < 0 || rank >= zsl.length()) {
+            return null;
+        }
+        final SkipListNode<K, S> node = zsl.zslGetElementByRank(rank + 1);
+        assert null != node;
+        return new Member<>(node.obj, node.score);
+    }
+
+    /**
+     * 获取指定逆序排名的成员数据
+     *
+     * @param rank 排名 0-based
+     * @return memver，如果不存在，则返回null
+     */
+    public Member<K, S> zrevmemberByRank(int rank) {
+        if (rank < 0 || rank >= zsl.length()) {
+            return null;
+        }
+        final SkipListNode<K, S> node = zsl.zslGetElementByRank(zsl.length() - rank);
+        assert null != node;
+        return new Member<>(node.obj, node.score);
+    }
+
     // ------------------------------------------------------- 内部实现 ----------------------------------------
 
     /**
@@ -621,8 +652,7 @@ public class GenericZSet<K, S> {
                 }
 
                 while (preNode.levelInfo[i].forward != null &&
-                        (scoreLessThan(preNode.levelInfo[i].forward.score, score) ||
-                                (scoreEquals(preNode.levelInfo[i].forward.score, score) && objLessThan(preNode.levelInfo[i].forward.obj, obj)))) {
+                        compareScoreAndObj(preNode.levelInfo[i].forward, score, obj) < 0) {
                     // preNode的后继节点仍然小于要插入的节点，需要继续前进，同时累计排名
                     rank[i] += preNode.levelInfo[i].span;
                     preNode = preNode.levelInfo[i].forward;
@@ -699,9 +729,8 @@ public class GenericZSet<K, S> {
             SkipListNode<K, S> preNode = this.header;
             for (int i = this.level - 1; i >= 0; i--) {
                 while (preNode.levelInfo[i].forward != null &&
-                        (scoreLessThan(preNode.levelInfo[i].forward.score, score) ||
-                                (scoreEquals(preNode.levelInfo[i].forward.score, score) && objLessThan(preNode.levelInfo[i].forward.obj, obj)))) {
-                    // preNode的后继节点仍然小于要插入的节点，需要继续前进
+                        compareScoreAndObj(preNode.levelInfo[i].forward, score, obj) < 0) {
+                    // preNode的后继节点仍然小于要删除的节点，需要继续前进
                     preNode = preNode.levelInfo[i].forward;
                 }
                 // 这是目标节点第i层的可能前驱节点
@@ -946,27 +975,28 @@ public class GenericZSet<K, S> {
             int traversed = 0;
             int removed = 0;
 
-            SkipListNode<K, S> lastNodeLtStartRank = this.header;
+            SkipListNode<K, S> lastNodeLtStart = this.header;
             for (int i = this.level - 1; i >= 0; i--) {
-                while (lastNodeLtStartRank.levelInfo[i].forward != null && (traversed + lastNodeLtStartRank.levelInfo[i].span) < start) {
+                while (lastNodeLtStart.levelInfo[i].forward != null &&
+                        (traversed + lastNodeLtStart.levelInfo[i].span) < start) {
                     // 下一个节点的排名还未到范围内，继续前进
                     // 更新已遍历的成员数量
-                    traversed += lastNodeLtStartRank.levelInfo[i].span;
-                    lastNodeLtStartRank = lastNodeLtStartRank.levelInfo[i].forward;
+                    traversed += lastNodeLtStart.levelInfo[i].span;
+                    lastNodeLtStart = lastNodeLtStart.levelInfo[i].forward;
                 }
-                update[i] = lastNodeLtStartRank;
+                update[i] = lastNodeLtStart;
             }
 
             traversed++;
 
-            SkipListNode<K, S> nodeGteStart = lastNodeLtStartRank.levelInfo[0].forward;
-            while (nodeGteStart != null && traversed <= end) {
-                final SkipListNode<K, S> next = nodeGteStart.levelInfo[0].forward;
-                zslDeleteNode(nodeGteStart, update);
-                dict.remove(nodeGteStart.obj);
+            SkipListNode<K, S> firstNodeGteStart = lastNodeLtStart.levelInfo[0].forward;
+            while (firstNodeGteStart != null && traversed <= end) {
+                final SkipListNode<K, S> next = firstNodeGteStart.levelInfo[0].forward;
+                zslDeleteNode(firstNodeGteStart, update);
+                dict.remove(firstNodeGteStart.obj);
                 removed++;
                 traversed++;
-                nodeGteStart = next;
+                firstNodeGteStart = next;
             }
             return removed;
         }
@@ -990,9 +1020,8 @@ public class GenericZSet<K, S> {
             SkipListNode<K, S> firstNodeGteScore = this.header;
             for (int i = this.level - 1; i >= 0; i--) {
                 while (firstNodeGteScore.levelInfo[i].forward != null &&
-                        (scoreLessThan(firstNodeGteScore.levelInfo[i].forward.score, score) ||
-                                (scoreEquals(firstNodeGteScore.levelInfo[i].forward.score, score) && objLessThanOrEquals(firstNodeGteScore.levelInfo[i].forward.obj, obj)))) {
-                    // forward.obj <= obj 也继续前进，也就是我么期望如果score相同时，在目标节点停下来，这样rank也不必特殊处理
+                        compareScoreAndObj(firstNodeGteScore.levelInfo[i].forward, score, obj) <= 0) {
+                    // <= 也继续前进，也就是我们期望在目标节点停下来，这样rank也不必特殊处理
                     rank += firstNodeGteScore.levelInfo[i].span;
                     firstNodeGteScore = firstNodeGteScore.levelInfo[i].forward;
                 }
@@ -1020,7 +1049,8 @@ public class GenericZSet<K, S> {
             int traversed = 0;
             SkipListNode<K, S> firstNodeGteRank = this.header;
             for (int i = this.level - 1; i >= 0; i--) {
-                while (firstNodeGteRank.levelInfo[i].forward != null && (traversed + firstNodeGteRank.levelInfo[i].span) <= rank) {
+                while (firstNodeGteRank.levelInfo[i].forward != null &&
+                        (traversed + firstNodeGteRank.levelInfo[i].span) <= rank) {
                     // <= rank 表示我们期望在目标节点停下来
                     traversed += firstNodeGteRank.levelInfo[i].span;
                     firstNodeGteRank = firstNodeGteRank.levelInfo[i].forward;
@@ -1050,7 +1080,7 @@ public class GenericZSet<K, S> {
          * @return node
          */
         private static <K, S> SkipListNode<K, S> zslCreateNode(int level, S score, K obj) {
-            @SuppressWarnings("unchekced") final SkipListNode<K, S> node = new SkipListNode<>(obj, score, new SkipListLevel[level]);
+            final SkipListNode<K, S> node = new SkipListNode<>(obj, score, new SkipListLevel[level]);
             for (int index = 0; index < level; index++) {
                 node.levelInfo[index] = new SkipListLevel<>();
             }
@@ -1078,27 +1108,35 @@ public class GenericZSet<K, S> {
         }
 
         /**
+         * 比较score和key的大小，分数作为第一排序条件，然后，相同分数的成员按照字典规则相对排序
+         *
+         * @param forward 后继节点
+         * @param score   分数
+         * @param obj     成员的键
+         * @return 0 表示equals
+         */
+        private int compareScoreAndObj(SkipListNode<K, S> forward, S score, K obj) {
+            final int scoreCompareR = compareScore(forward.score, score);
+            if (scoreCompareR != 0) {
+                return scoreCompareR;
+            }
+            return compareObj(forward.obj, obj);
+        }
+
+        /**
          * 比较两个成员的key，<b>必须保证当且仅当两个键相等的时候返回0</b>
-         * 字符串带有这样的特性。
+         *
+         * @return 0表示相等
          */
         private int compareObj(@Nonnull K objA, @Nonnull K objB) {
             return objComparator.compare(objA, objB);
         }
 
         /**
-         * 判断第一个键是否小于第二个键
-         *
-         * @return true/false
-         */
-        private boolean objLessThan(K objA, K objB) {
-            // 不使用equals，而是使用compare
-            return compareObj(objA, objB) < 0;
-        }
-
-        /**
          * 判断两个对象是否相等
          *
          * @return true/false
+         * @apiNote 使用compare == 0判断相等
          */
         private boolean objEquals(K objA, K objB) {
             // 不使用equals，而是使用compare
@@ -1106,49 +1144,22 @@ public class GenericZSet<K, S> {
         }
 
         /**
-         * 判断第一个键是否小于等于第二个键
-         *
-         * @return true/false
-         */
-        private boolean objLessThanOrEquals(K objA, K objB) {
-            // 不使用equals，而是使用compare
-            return compareObj(objA, objB) <= 0;
-        }
-
-        /**
          * 比较两个分数的大小
          *
-         * @return -1,0,1
+         * @return 0表示相等
          */
         private int compareScore(S score1, S score2) {
             return scoreHandler.compare(score1, score2);
         }
 
         /**
-         * 判断第一个分数是否小于第二个分数
-         *
-         * @return true/false
-         */
-        private boolean scoreLessThan(S score1, S score2) {
-            return compareScore(score1, score2) < 0;
-        }
-
-        /**
          * 判断第一个分数是否和第二个分数相等
          *
          * @return true/false
+         * @apiNote 使用compare == 0判断相等
          */
         private boolean scoreEquals(S score1, S score2) {
             return compareScore(score1, score2) == 0;
-        }
-
-        /**
-         * 判断第一个分数是否小于等于第二个分数
-         *
-         * @return true/false
-         */
-        private boolean scoreLessThanOrEquals(S score1, S score2) {
-            return compareScore(score1, score2) <= 0;
         }
 
         /**
