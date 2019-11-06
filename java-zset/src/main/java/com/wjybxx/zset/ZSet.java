@@ -1,6 +1,7 @@
 package com.wjybxx.zset;
 
 
+import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import javax.annotation.concurrent.NotThreadSafe;
 import java.util.*;
@@ -28,7 +29,7 @@ public class ZSet {
     /**
      * obj -> score
      */
-    private final Map<Long, Long> dict = new HashMap<>(128);
+    private final Map<String, Long> dict = new HashMap<>(128);
     /**
      * scoreList
      */
@@ -45,6 +46,13 @@ public class ZSet {
         return zsl.length();
     }
 
+    /**
+     * @return zset中当前的成员信息，用于测试
+     */
+    public String dump() {
+        return zsl.dump();
+    }
+
     // -------------------------------------------------------- insert -----------------------------------------------
 
     /**
@@ -53,7 +61,7 @@ public class ZSet {
      * @param score  数据的评分
      * @param member 成员id
      */
-    public void zadd(final long score, final long member) {
+    public void zadd(final long score, @Nonnull final String member) {
         final Long oldScore = dict.put(member, score);
         if (oldScore != null) {
             // 这里小心，score是基本类型，因此oldScore会自动拆箱，因此可以 == 比较，否则不能 == 比较
@@ -73,7 +81,7 @@ public class ZSet {
      * @param member    成员id
      * @return 新值
      */
-    public long zincrby(long increment, long member) {
+    public long zincrby(long increment, @Nonnull String member) {
         final Long oldScore = dict.get(member);
         final long score = (oldScore == null ? increment : (increment + oldScore));
         zadd(score, member);
@@ -88,7 +96,7 @@ public class ZSet {
      * @param member 成员id
      * @return 如果成员存在，则返回true，否则返回false
      */
-    public boolean zrem(long member) {
+    public boolean zrem(@Nonnull String member) {
         final Long oldScore = dict.remove(member);
         if (oldScore != null) {
             zsl.zslDelete(oldScore, member);
@@ -115,7 +123,7 @@ public class ZSet {
      * @param spec score范围区间
      * @return 删除的元素数目
      */
-    public int zremrangeByScore(ZScoreRangeSpec spec) {
+    public int zremrangeByScore(@Nonnull ZScoreRangeSpec spec) {
         return zsl.zslDeleteRangeByScore(spec, dict);
     }
 
@@ -202,7 +210,7 @@ public class ZSet {
     /**
      * 返回有序集key中成员member的排名。其中有序集成员按score值递增(从小到大)顺序排列。
      * 返回的排名从0开始(0-based)，也就是说，score值最小的成员排名为0。
-     * 使用{@link #zrevrank(long)}可以获得成员按score值递减(从大到小)排列的排名。
+     * 使用{@link #zrevrank(String)}可以获得成员按score值递减(从大到小)排列的排名。
      *
      * <b>与redis的区别</b>：我们使用-1表示成员不存在，而不是返回null。
      *
@@ -214,7 +222,7 @@ public class ZSet {
      * @param member 成员id
      * @return 如果存在该成员，则返回该成员的排名，否则返回-1
      */
-    public int zrank(long member) {
+    public int zrank(@Nonnull String member) {
         final Long score = dict.get(member);
         if (score == null) {
             return -1;
@@ -226,7 +234,7 @@ public class ZSet {
     /**
      * 返回有序集key中成员member的排名，其中有序集成员按score值从大到小排列。
      * 返回的排名从0开始(0-based)，也就是说，score值最大的成员排名为0。
-     * 使用{@link #zrank(long)}可以获得成员按score值递增(从小到大)排列的排名。
+     * 使用{@link #zrank(String)}可以获得成员按score值递增(从小到大)排列的排名。
      *
      * <b>与redis的区别</b>：我们使用-1表示成员不存在，而不是返回null。
      *
@@ -238,7 +246,7 @@ public class ZSet {
      * @param member 成员id
      * @return 如果存在该成员，则返回该成员的排名，否则返回-1
      */
-    public int zrevrank(long member) {
+    public int zrevrank(@Nonnull String member) {
         final Long score = dict.get(member);
         if (score == null) {
             return -1;
@@ -254,7 +262,7 @@ public class ZSet {
      * @param member 成员id
      * @return score
      */
-    public Long zscore(long member) {
+    public Long zscore(String member) {
         return dict.get(member);
     }
 
@@ -466,8 +474,8 @@ public class ZSet {
          */
         private int level = 1;
 
-        public SkipList() {
-            this.header = zslCreateNode(ZSKIPLIST_MAXLEVEL, 0, 0);
+        SkipList() {
+            this.header = zslCreateNode(ZSKIPLIST_MAXLEVEL, 0, null);
         }
 
         /**
@@ -475,11 +483,11 @@ public class ZSet {
          *
          * @param level 节点具有的层级 - {@link #zslRandomLevel()}
          * @param score 成员分数
-         * @param objId 成员id
+         * @param obj   成员id
          * @return node
          */
-        private static SkipListNode zslCreateNode(int level, long score, long objId) {
-            final SkipListNode node = new SkipListNode(objId, score, new SkipListLevel[level]);
+        private static SkipListNode zslCreateNode(int level, long score, String obj) {
+            final SkipListNode node = new SkipListNode(obj, score, new SkipListLevel[level]);
             for (int index = 0; index < level; index++) {
                 node.levelInfo[index] = new SkipListLevel();
             }
@@ -507,6 +515,42 @@ public class ZSet {
         }
 
         /**
+         * 比较两个成员的key，<b>必须保证当且仅当两个键相等的时候返回0</b>
+         * 字符串带有这样的特性。
+         */
+        private static int compareObj(@Nonnull String objA, @Nonnull String objB) {
+            return objA.compareTo(objB);
+        }
+
+        /**
+         * 判断第一个对象是否小于第二个对象
+         *
+         * @return true/false
+         */
+        private static boolean objLtOther(String objA, String objB) {
+            return compareObj(objA, objB) < 0;
+        }
+
+        /**
+         * 判断两个对象是否相等
+         *
+         * @return true/false
+         */
+        private static boolean objEquals(String objA, String objB) {
+            // 不使用equals，而是使用compare
+            return compareObj(objA, objB) == 0;
+        }
+
+        /**
+         * 判断第一个对象是否小于等于第二个对象
+         *
+         * @return true/false
+         */
+        private static boolean objLteOther(String objA, String objB) {
+            return compareObj(objA, objB) <= 0;
+        }
+
+        /**
          * 插入一个新的节点到跳表。
          * 这里假定元素已经不存在（直到调用方执行该方法）。
          * <p>
@@ -529,7 +573,8 @@ public class ZSet {
          * @param score 分数
          * @param obj   obj 分数对应的成员id
          */
-        SkipListNode zslInsert(long score, long obj) {
+        @SuppressWarnings("UnusedReturnValue")
+        SkipListNode zslInsert(long score, String obj) {
             // 新节点的level
             final int level = zslRandomLevel();
 
@@ -556,7 +601,7 @@ public class ZSet {
 
                 while (preNode.levelInfo[i].forward != null &&
                         (preNode.levelInfo[i].forward.score < score ||
-                                (preNode.levelInfo[i].forward.score == score && preNode.levelInfo[i].forward.obj < obj))) {
+                                (preNode.levelInfo[i].forward.score == score && objLtOther(preNode.levelInfo[i].forward.obj, obj)))) {
                     // preNode的后继节点仍然小于要插入的节点，需要继续前进，同时累计排名
                     rank[i] += preNode.levelInfo[i].span;
                     preNode = preNode.levelInfo[i].forward;
@@ -623,7 +668,8 @@ public class ZSet {
          * @param score 分数用于快速定位节点
          * @param obj   用于确定节点是否是对应的数据节点
          */
-        boolean zslDelete(long score, long obj) {
+        @SuppressWarnings("UnusedReturnValue")
+        boolean zslDelete(long score, String obj) {
             // update - 需要更新后继节点的Node
             // 1. 分数小的节点
             // 2. 分数相同但id小的节点（分数相同时根据数据排序）
@@ -633,7 +679,7 @@ public class ZSet {
             for (int i = this.level - 1; i >= 0; i--) {
                 while (preNode.levelInfo[i].forward != null &&
                         (preNode.levelInfo[i].forward.score < score ||
-                                (preNode.levelInfo[i].forward.score == score && preNode.levelInfo[i].forward.obj < obj))) {
+                                (preNode.levelInfo[i].forward.score == score && objLtOther(preNode.levelInfo[i].forward.obj, obj)))) {
                     // preNode的后继节点仍然小于要插入的节点，需要继续前进
                     preNode = preNode.levelInfo[i].forward;
                 }
@@ -645,7 +691,7 @@ public class ZSet {
             /* We may have multiple elements with the same score, what we need
              * is to find the element with both the right score and object. */
             final SkipListNode targetNode = preNode.levelInfo[0].forward;
-            if (targetNode != null && score == targetNode.score && targetNode.obj == obj) {
+            if (targetNode != null && score == targetNode.score && objEquals(targetNode.obj, obj)) {
                 zslDeleteNode(targetNode, update);
                 return true;
             }
@@ -855,7 +901,7 @@ public class ZSet {
          * @param dict  对象id到score的映射
          * @return 删除的节点数量
          */
-        int zslDeleteRangeByScore(ZScoreRangeSpec range, Map<Long, Long> dict) {
+        int zslDeleteRangeByScore(ZScoreRangeSpec range, Map<String, Long> dict) {
             final SkipListNode[] update = new SkipListNode[this.level];
             int removed = 0;
 
@@ -897,7 +943,7 @@ public class ZSet {
          * @param dict  member -> score的字典
          * @return 删除的成员数量
          */
-        int zslDeleteRangeByRank(int start, int end, Map<Long, Long> dict) {
+        int zslDeleteRangeByRank(int start, int end, Map<String, Long> dict) {
             final SkipListNode[] update = new SkipListNode[this.level];
             /* 已遍历的真实元素数量，表示元素的真实排名 */
             int traversed = 0;
@@ -942,20 +988,20 @@ public class ZSet {
          * @param obj   节点对应的数据id
          * @return 排名，从1开始
          */
-        int zslGetRank(long score, long obj) {
+        int zslGetRank(long score, @Nonnull String obj) {
             int rank = 0;
             SkipListNode firstNodeGteScore = this.header;
             for (int i = this.level - 1; i >= 0; i--) {
                 while (firstNodeGteScore.levelInfo[i].forward != null &&
                         (firstNodeGteScore.levelInfo[i].forward.score < score ||
-                                (firstNodeGteScore.levelInfo[i].forward.score == score && firstNodeGteScore.levelInfo[i].forward.obj <= obj))) {
+                                (firstNodeGteScore.levelInfo[i].forward.score == score && objLteOther(firstNodeGteScore.levelInfo[i].forward.obj, obj)))) {
                     // forward.obj <= obj 也继续前进，也就是我么期望如果score相同时，在目标节点停下来，这样rank也不必特殊处理
                     rank += firstNodeGteScore.levelInfo[i].span;
                     firstNodeGteScore = firstNodeGteScore.levelInfo[i].forward;
                 }
 
                 /* firstNodeGteScore might be equal to zsl->header, so test if firstNodeGteScore is header */
-                if (firstNodeGteScore != this.header && firstNodeGteScore.obj == obj) {
+                if (firstNodeGteScore != this.header && objEquals(firstNodeGteScore.obj, obj)) {
                     // 可能在任意层找到
                     return rank;
                 }
@@ -1003,7 +1049,7 @@ public class ZSet {
          *
          * @return string
          */
-        public String dump() {
+        String dump() {
             final StringBuilder sb = new StringBuilder("{level = 0, nodeArray:[\n");
             SkipListNode curNode = this.header.levelInfo[0].forward;
             int rank = 0;
@@ -1029,9 +1075,9 @@ public class ZSet {
      */
     static class SkipListNode {
         /**
-         * 节点对应的数据id - 如果要通用的话，这里将来将是一个泛型对象，需要实现{@link Comparable}，且必须满足仅当equals为true的时候compare返回0
+         * 节点对应的数据id
          */
-        final long obj;
+        final String obj;
         /**
          * 该节点数据对应的评分 - 如果要通用的话，这里将来将是一个泛型对象，需要实现{@link Comparable}。
          */
@@ -1048,7 +1094,7 @@ public class ZSet {
          */
         SkipListNode backward;
 
-        private SkipListNode(long obj, long score, SkipListLevel[] levelInfo) {
+        private SkipListNode(String obj, long score, SkipListLevel[] levelInfo) {
             this.obj = obj;
             this.score = score;
             this.levelInfo = levelInfo;
@@ -1113,15 +1159,15 @@ public class ZSet {
      */
     public static class Member {
 
-        private final long member;
+        private final String member;
         private final long score;
 
-        Member(long member, long score) {
+        Member(String member, long score) {
             this.member = member;
             this.score = score;
         }
 
-        public long getMember() {
+        public String getMember() {
             return member;
         }
 
@@ -1138,12 +1184,12 @@ public class ZSet {
         // 插入100个数据，member编号就是1-100
         IntStream.rangeClosed(1, 100).forEach(member -> {
             // 使用nextInt避免越界，导致一些奇怪的值
-            zSet.zadd(ThreadLocalRandom.current().nextInt(0, 10000), member);
+            zSet.zadd(ThreadLocalRandom.current().nextInt(0, 10000), Integer.toString(member));
         });
 
         // 重新插入
         IntStream.rangeClosed(1, 100).forEach(member -> {
-            zSet.zincrby(ThreadLocalRandom.current().nextInt(0, 10000), member);
+            zSet.zincrby(ThreadLocalRandom.current().nextInt(0, 10000), Integer.toString(member));
         });
 
         System.out.println("------------------------- dump ----------------------");
