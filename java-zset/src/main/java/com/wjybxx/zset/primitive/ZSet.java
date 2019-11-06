@@ -72,7 +72,8 @@ public class ZSet {
     // -------------------------------------------------------- insert -----------------------------------------------
 
     /**
-     * 往有序集合中新增一个成员。如果成员存在，则更新他的值。
+     * 往有序集合中新增一个成员。
+     * 如果指定添加的成员已经是有序集合里面的成员，则会更新改成员的分数（scrore）并更新到正确的排序位置。
      *
      * @param score  数据的评分
      * @param member 成员id
@@ -91,7 +92,8 @@ public class ZSet {
     }
 
     /**
-     * 增加指定成员对应的值，如果指定成员不存在，则假设之前的值是0。
+     * 为有序集的成员member的score值加上增量increment。
+     * 如果不存在member，就在有序集中添加一个member，score是increment（就好像它之前的score是0）
      *
      * @param increment 要增加的值
      * @param member    成员id
@@ -134,7 +136,7 @@ public class ZSet {
     }
 
     /**
-     * 移除zset中所有score值在范围描述期间的成员
+     * 移除zset中所有score值在范围描述期间的成员(可以自定义是否包含上下界)
      *
      * @param spec score范围区间
      * @return 删除的成员数目
@@ -147,12 +149,6 @@ public class ZSet {
      * 删除指定排名范围的全部成员，start和end都是从0开始的。
      * 排名0表示分数最小的成员。
      * start和end都可以是负数，此时它们表示从最高排名成员开始的偏移量，eg: -1表示最高排名的成员， -2表示第二高分的成员，以此类推。
-     * <p>
-     * Remove all elements in the sorted set at key with rank between start and end. Start and end are
-     * 0-based with rank 0 being the element with the lowest score. Both start and end can be negative
-     * numbers, where they indicate offsets starting at the element with the highest rank. For
-     * example: -1 is the element with the highest score, -2 the element with the second highest score
-     * and so forth.
      * <p>
      * <b>Time complexity:</b> O(log(N))+O(M) with N being the number of elements in the sorted set
      * and M the number of elements removed by the operation
@@ -252,16 +248,13 @@ public class ZSet {
     // -------------------------------------------------------- query -----------------------------------------------
 
     /**
-     * 返回有序集key中成员member的排名。其中有序集成员按score值递增(从小到大)顺序排列。
+     * 返回有序集中成员member的排名。其中有序集成员按score值递增(从小到大)顺序排列。
      * 返回的排名从0开始(0-based)，也就是说，score值最小的成员排名为0。
      * 使用{@link #zrevrank(String)}可以获得成员按score值递减(从大到小)排列的排名。
-     *
+     * <p>
+     * <b>Time complexity:</b> O(log(N))
+     * <p>
      * <b>与redis的区别</b>：我们使用-1表示成员不存在，而不是返回null。
-     *
-     * <p>
-     * <b>Time complexity:</b>
-     * <p>
-     * O(log(N))
      *
      * @param member 成员id
      * @return 如果存在该成员，则返回该成员的排名，否则返回-1
@@ -276,16 +269,13 @@ public class ZSet {
     }
 
     /**
-     * 返回有序集key中成员member的排名，其中有序集成员按score值从大到小排列。
+     * 返回有序集中成员member的排名，其中有序集成员按score值从大到小排列。
      * 返回的排名从0开始(0-based)，也就是说，score值最大的成员排名为0。
      * 使用{@link #zrank(String)}可以获得成员按score值递增(从小到大)排列的排名。
-     *
+     * <p>
+     * <b>Time complexity:</b> O(log(N))
+     * <p>
      * <b>与redis的区别</b>：我们使用-1表示成员不存在，而不是返回null。
-     *
-     * <p>
-     * <b>Time complexity:</b>
-     * <p>
-     * O(log(N))
      *
      * @param member 成员id
      * @return 如果存在该成员，则返回该成员的排名，否则返回-1
@@ -300,8 +290,8 @@ public class ZSet {
     }
 
     /**
-     * 查询member的分数。
-     * 如果分数不存在，则返回null - 这里返回任意的基础值都是不合理的，因此必须返回null。
+     * 返回有序集成员member的score值。
+     * 如果member元素不是有序集的成员，返回null - 这里返回任意的基础值都是不合理的，因此必须返回null。
      *
      * @param member 成员id
      * @return score
@@ -311,7 +301,9 @@ public class ZSet {
     }
 
     /**
-     * 返回zset中指定分数区间内的成员，分数由低到高
+     * 返回有序集合中的分数在min和max之间的所有元素（包括分数等于max或者min的元素）。
+     * 元素被认为是从低分到高分排序的。
+     * 具有相同分数的元素按字典序排列。
      *
      * @param minScore 最低分数 inclusive
      * @param maxScore 最高分数 inclusive
@@ -322,7 +314,9 @@ public class ZSet {
     }
 
     /**
-     * 返回zset中指定分数区间内的成员，分数由高到低排序
+     * 返回有序集合中的分数在min和max之间的所有元素（包括分数等于max或者min的元素）。
+     * 元素被认为是从高分到低分排序的。
+     * 具有相同score值的成员按字典序的反序排列。
      *
      * @param minScore 最低分数 inclusive
      * @param maxScore 最高分数 inclusive
@@ -399,7 +393,7 @@ public class ZSet {
     /**
      * 查询指定排名区间的成员id和分数，结果排名由低到高。
      * start和end都是从0开始的。
-     * 排名0表示分数最小的成员。
+     * 其中成员的位置按score值递增(从小到大)来排列，排名0表示分数最小的成员。
      * start和end都可以是负数，此时它们表示从最高排名成员开始的偏移量，eg: -1表示最高排名的成员， -2表示第二高分的成员，以此类推。
      *
      * @param start 起始排名 inclusive
@@ -411,10 +405,11 @@ public class ZSet {
     }
 
     /**
-     * 查询指定排名区间的成员id和分数，结果排名由高到低。
+     * 返回有序集中，指定区间内的成员。
      * start和end都是从0开始的。
-     * 排名0表示分数最小的成员。
-     * start和end都可以是负数，此时它们表示从最高排名成员开始的偏移量，eg: -1表示最高排名的成员， -2表示第二高分的成员，以此类推。
+     * 其中成员的位置按score值递减(从大到小)来排列，排名0表示分数最高的成员。
+     * 具有相同score值的成员按字典序的反序排列。
+     * 除了成员按score值递减的次序排列这一点外，{@code zrevrangeByRank} 方法的其它方面和 {@link #zrangeByRank(int, int)}相同。
      *
      * @param start 起始排名 inclusive
      * @param end   截止排名 inclusive
@@ -426,8 +421,6 @@ public class ZSet {
 
     /**
      * 查询指定排名区间的成员id和分数，start和end都是从0开始的。
-     * 排名0表示分数最小的成员。
-     * start和end都可以是负数，此时它们表示从最高排名成员开始的偏移量，eg: -1表示最高排名的成员， -2表示第二高分的成员，以此类推。
      *
      * @param start   起始排名 inclusive
      * @param end     截止排名 inclusive
@@ -445,19 +438,14 @@ public class ZSet {
         }
 
         int rangeLen = end - start + 1;
-
         SkipListNode listNode;
+
+        /* start >= 0，大于0表示需要进行调整 */
         /* Check if starting point is trivial, before doing log(N) lookup. */
         if (reverse) {
-            listNode = zsl.tail;
-            if (start > 0) {
-                listNode = zsl.zslGetElementByRank(zslLength - start);
-            }
+            listNode = start > 0 ? zsl.zslGetElementByRank(zslLength - start) : zsl.tail;
         } else {
-            listNode = zsl.header.levelInfo[0].forward;
-            if (start > 0) {
-                listNode = zsl.zslGetElementByRank(start + 1);
-            }
+            listNode = start > 0 ? zsl.zslGetElementByRank(start + 1) : zsl.header.levelInfo[0].forward;
         }
 
         final List<Member> result = new ArrayList<>(rangeLen);
@@ -469,7 +457,9 @@ public class ZSet {
     }
 
     /**
-     * 获取指定排名的成员数据
+     * 获取指定排名的成员数据。
+     * 元素被认为是从低分到高分排序的。
+     * 具有相同分数的元素按字典序排列。
      *
      * @param rank 排名 0-based
      * @return memver，如果不存在，则返回null
@@ -484,7 +474,9 @@ public class ZSet {
     }
 
     /**
-     * 获取指定逆序排名的成员数据
+     * 获取指定逆序排名的成员数据。
+     * 元素被认为是从高分到低分排序的。
+     * 具有相同score值的成员按字典序的反序排列。
      *
      * @param rank 排名 0-based
      * @return memver，如果不存在，则返回null
