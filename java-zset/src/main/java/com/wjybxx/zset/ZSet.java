@@ -4,6 +4,8 @@ package com.wjybxx.zset;
 import javax.annotation.Nullable;
 import javax.annotation.concurrent.NotThreadSafe;
 import java.util.*;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.stream.IntStream;
 
 /**
  * 基本类型的sorted set - 参考redis的zset实现
@@ -22,7 +24,6 @@ import java.util.*;
  */
 @NotThreadSafe
 public class ZSet {
-
 
     /**
      * obj -> score
@@ -85,11 +86,15 @@ public class ZSet {
      * 删除指定元素
      *
      * @param member 成员id
+     * @return 如果成员存在，则返回true，否则返回false
      */
-    public void zrem(long member) {
+    public boolean zrem(long member) {
         final Long oldScore = dict.remove(member);
         if (oldScore != null) {
             zsl.zslDelete(oldScore, member);
+            return true;
+        } else {
+            return false;
         }
     }
 
@@ -279,14 +284,17 @@ public class ZSet {
      * 返回zset中指定分数区间内的成员，并按照指定顺序返回
      *
      * @param range   score范围描述信息
-     * @param offset  偏移量(用于分页)  大于等于0，小于0无效
+     * @param offset  偏移量(用于分页)  大于等于0
      * @param limit   返回的元素数量(用于分页) 小于0表示不限制
      * @param reverse 是否逆序
      * @return memberInfo
      */
     public List<Member> zrangeByScoreWithOptions(final ZScoreRangeSpec range, int offset, int limit, boolean reverse) {
-        SkipListNode listNode;
+        if (offset < 0) {
+            throw new IllegalArgumentException("offset" + ": " + offset + " (expected: >= 0)");
+        }
 
+        SkipListNode listNode;
         /* If reversed, get the last node in range as starting point. */
         if (reverse) {
             listNode = zsl.zslLastInRange(range);
@@ -299,10 +307,9 @@ public class ZSet {
             return new ArrayList<>();
         }
 
-        /* 这里使用 > 0 判断而不是 != 0判断，避免传入负值的时候造成错误 */
         /* If there is an offset, just traverse the number of elements without
          * checking the score because that is done in the next loop. */
-        while (listNode != null && offset-- > 0) {
+        while (listNode != null && offset-- != 0) {
             if (reverse) {
                 listNode = listNode.backward;
             } else {
@@ -493,7 +500,6 @@ public class ZSet {
          */
         private int zslRandomLevel() {
             int level = 1;
-            // 使用ThreadLocalRandom减少不必要的竞争
             while (level < ZSKIPLIST_MAXLEVEL && random.nextFloat() < ZSKIPLIST_P) {
                 level++;
             }
@@ -998,17 +1004,23 @@ public class ZSet {
          * @return string
          */
         public String dump() {
-            final StringBuilder sb = new StringBuilder();
+            final StringBuilder sb = new StringBuilder("{level = 0, nodeArray:[\n");
             SkipListNode curNode = this.header.levelInfo[0].forward;
-            for (int i = this.level - 1; i >= 0; i--) {
-                sb.append("{level:").append(i + 1).append(", nodeArray:[");
-                while (curNode != null) {
-                    sb.append("{obj:").append(curNode.obj).append(",score:").append(curNode.score).append("}");
-                    curNode = curNode.levelInfo[i].forward;
+            int rank = 0;
+            while (curNode != null) {
+                sb.append("{rank:").append(rank++)
+                        .append(",obj:").append(curNode.obj)
+                        .append(",score:").append(curNode.score);
+
+                curNode = curNode.levelInfo[0].forward;
+
+                if (curNode != null) {
+                    sb.append("},\n");
+                } else {
+                    sb.append("}\n");
                 }
-                sb.append("]}\n");
             }
-            return sb.toString();
+            return sb.append("]}").toString();
         }
     }
 
@@ -1116,5 +1128,27 @@ public class ZSet {
         public long getScore() {
             return score;
         }
+    }
+
+    // - 测试用例
+
+    public static void main(String[] args) {
+        final ZSet zSet = new ZSet();
+
+        // 插入100个数据，member编号就是1-100
+        IntStream.rangeClosed(1, 100).forEach(member -> {
+            // 使用nextInt避免越界，导致一些奇怪的值
+            zSet.zadd(ThreadLocalRandom.current().nextInt(0, 10000), member);
+        });
+
+        // 重新插入
+        IntStream.rangeClosed(1, 100).forEach(member -> {
+            zSet.zincrby(ThreadLocalRandom.current().nextInt(0, 10000), member);
+        });
+
+        System.out.println("------------------------- dump ----------------------");
+        System.out.println(zSet.zsl.dump());
+        // 由于不是很好调试，建议在debug界面根据输出信息调试
+        System.out.println("debug");
     }
 }
