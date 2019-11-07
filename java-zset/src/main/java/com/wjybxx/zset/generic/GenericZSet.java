@@ -49,9 +49,6 @@ import java.util.stream.IntStream;
  * <p>
  * 这里只实现了redis zset中的几个常用的接口，扩展不是太麻烦，可以自己根据需要实现。
  *
- * <p>
- * 泛型zset的难度主要在score处理上，一定要小心，不能使用 '==' '!='等进行操作。
- *
  * @param <K> the type of member
  * @param <S> the type of score
  * @author wjybxx
@@ -570,7 +567,7 @@ public class GenericZSet<K, S> {
      * @param end   截止排名 inclusive
      * @return memberInfo
      */
-    public List<Member> zrangeByRank(int start, int end) {
+    public List<Member<K, S>> zrangeByRank(int start, int end) {
         return zrangeByRankInternal(start, end, false);
     }
 
@@ -585,7 +582,7 @@ public class GenericZSet<K, S> {
      * @param end   截止排名 inclusive
      * @return memberInfo
      */
-    public List<Member> zrevrangeByRank(int start, int end) {
+    public List<Member<K, S>> zrevrangeByRank(int start, int end) {
         return zrangeByRankInternal(start, end, true);
     }
 
@@ -597,7 +594,7 @@ public class GenericZSet<K, S> {
      * @param reverse 是否逆序返回
      * @return 区间范围内的成员id和score
      */
-    private List<Member> zrangeByRankInternal(int start, int end, boolean reverse) {
+    private List<Member<K, S>> zrangeByRankInternal(int start, int end, boolean reverse) {
         final int zslLength = zsl.length();
 
         start = convertStartRank(start, zslLength);
@@ -619,7 +616,7 @@ public class GenericZSet<K, S> {
             listNode = start > 0 ? zsl.zslGetElementByRank(start + 1) : zsl.header.levelInfo[0].forward;
         }
 
-        final List<Member> result = new ArrayList<>(rangeLen);
+        final List<Member<K, S>> result = new ArrayList<>(rangeLen);
         while (rangeLen-- > 0 && listNode != null) {
             result.add(new Member<>(listNode.obj, listNode.score));
             listNode = reverse ? listNode.backward : listNode.levelInfo[0].forward;
@@ -1192,61 +1189,6 @@ public class GenericZSet<K, S> {
         }
 
         /**
-         * 比较score和key的大小，分数作为第一排序条件，然后，相同分数的成员按照字典规则相对排序
-         *
-         * @param forward 后继节点
-         * @param score   分数
-         * @param obj     成员的键
-         * @return 0 表示equals
-         */
-        private int compareScoreAndObj(SkipListNode<K, S> forward, S score, K obj) {
-            final int scoreCompareR = compareScore(forward.score, score);
-            if (scoreCompareR != 0) {
-                return scoreCompareR;
-            }
-            return compareObj(forward.obj, obj);
-        }
-
-        /**
-         * 比较两个成员的key，<b>必须保证当且仅当两个键相等的时候返回0</b>
-         *
-         * @return 0表示相等
-         */
-        private int compareObj(@Nonnull K objA, @Nonnull K objB) {
-            return objComparator.compare(objA, objB);
-        }
-
-        /**
-         * 判断两个对象是否相等
-         *
-         * @return true/false
-         * @apiNote 使用compare == 0判断相等
-         */
-        private boolean objEquals(K objA, K objB) {
-            // 不使用equals，而是使用compare
-            return compareObj(objA, objB) == 0;
-        }
-
-        /**
-         * 比较两个分数的大小
-         *
-         * @return 0表示相等
-         */
-        private int compareScore(S score1, S score2) {
-            return scoreHandler.compare(score1, score2);
-        }
-
-        /**
-         * 判断第一个分数是否和第二个分数相等
-         *
-         * @return true/false
-         * @apiNote 使用compare == 0判断相等
-         */
-        private boolean scoreEquals(S score1, S score2) {
-            return compareScore(score1, score2) == 0;
-        }
-
-        /**
          * 计算两个score的和
          */
         private S sum(S score1, S score2) {
@@ -1306,6 +1248,62 @@ public class GenericZSet<K, S> {
          */
         boolean zslValueLteMax(S value, ZScoreRangeSpec<S> spec) {
             return spec.maxex ? compareScore(value, spec.max) < 0 : compareScore(value, spec.max) <= 0;
+        }
+
+
+        /**
+         * 比较score和key的大小，分数作为第一排序条件，然后，相同分数的成员按照字典规则相对排序
+         *
+         * @param forward 后继节点
+         * @param score   分数
+         * @param obj     成员的键
+         * @return 0 表示equals
+         */
+        private int compareScoreAndObj(SkipListNode<K, S> forward, S score, K obj) {
+            final int scoreCompareR = compareScore(forward.score, score);
+            if (scoreCompareR != 0) {
+                return scoreCompareR;
+            }
+            return compareObj(forward.obj, obj);
+        }
+
+        /**
+         * 比较两个成员的key，<b>必须保证当且仅当两个键相等的时候返回0</b>
+         *
+         * @return 0表示相等
+         */
+        private int compareObj(@Nonnull K objA, @Nonnull K objB) {
+            return objComparator.compare(objA, objB);
+        }
+
+        /**
+         * 判断两个对象是否相等
+         *
+         * @return true/false
+         * @apiNote 使用compare == 0判断相等
+         */
+        private boolean objEquals(K objA, K objB) {
+            // 不使用equals，而是使用compare
+            return compareObj(objA, objB) == 0;
+        }
+
+        /**
+         * 比较两个分数的大小
+         *
+         * @return 0表示相等
+         */
+        private int compareScore(S score1, S score2) {
+            return scoreHandler.compare(score1, score2);
+        }
+
+        /**
+         * 判断第一个分数是否和第二个分数相等
+         *
+         * @return true/false
+         * @apiNote 使用compare == 0判断相等
+         */
+        private boolean scoreEquals(S score1, S score2) {
+            return compareScore(score1, score2) == 0;
         }
 
         /**

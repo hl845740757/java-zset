@@ -146,7 +146,7 @@ public class ZSet<K> {
 
     /**
      * 为有序集的成员member的score值加上增量increment，并更新到正确的排序位置。
-     * 如果不存在member，就在有序集中添加一个member，score是increment（就好像它之前的score是0）
+     * 如果有序集中不存在member，就在有序集中添加一个member，score是increment（就好像它之前的score是0）
      *
      * @param increment 自定义增量
      * @param member    成员id
@@ -311,7 +311,7 @@ public class ZSet<K> {
         if (zsl.length() <= count) {
             return 0;
         }
-        return zsl.zslDeleteRangeByRank(1, zsl.length() - count, dict);
+        return zsl.zslDeleteRangeByRank(count + 1, zsl.length(), dict);
     }
 
     /**
@@ -325,7 +325,7 @@ public class ZSet<K> {
         if (zsl.length() <= count) {
             return 0;
         }
-        return zremrangeByRank(0, zsl.length() - 1 - count);
+        return zsl.zslDeleteRangeByRank(1, zsl.length() - count, dict);
     }
     // endregion
 
@@ -644,13 +644,8 @@ public class ZSet<K> {
          * - 其实也可以使用{@link java.util.concurrent.ThreadLocalRandom}
          */
         private final Random random = new Random();
-        /**
-         * 键比较器
-         */
+
         private final Comparator<K> objComparator;
-        /**
-         * 分数比较器
-         */
         private final ScoreHandler scoreHandler;
         /**
          * 跳表头结点 - 哨兵
@@ -863,29 +858,6 @@ public class ZSet<K> {
             }
 
             this.length--;
-        }
-
-        /**
-         * 值是否大于等于下限
-         *
-         * @param value 要比较的score
-         * @param spec  范围描述信息
-         * @return true/false
-         */
-        @SuppressWarnings("BooleanMethodIsAlwaysInverted")
-        boolean zslValueGteMin(long value, ZScoreRangeSpec spec) {
-            return spec.minex ? compareScore(value, spec.min) > 0 : compareScore(value, spec.min) >= 0;
-        }
-
-        /**
-         * 值是否小于等于上限
-         *
-         * @param value 要比较的score
-         * @param spec  范围描述信息
-         * @return true/false
-         */
-        boolean zslValueLteMax(long value, ZScoreRangeSpec spec) {
-            return spec.maxex ? compareScore(value, spec.max) < 0 : compareScore(value, spec.max) <= 0;
         }
 
         /**
@@ -1150,8 +1122,8 @@ public class ZSet<K> {
             int traversed = 0;
             SkipListNode<K> firstNodeGteRank = this.header;
             for (int i = this.level - 1; i >= 0; i--) {
-                while (firstNodeGteRank.levelInfo[i].forward != null
-                        && (traversed + firstNodeGteRank.levelInfo[i].span) <= rank) {
+                while (firstNodeGteRank.levelInfo[i].forward != null &&
+                        (traversed + firstNodeGteRank.levelInfo[i].span) <= rank) {
                     // <= rank 表示我们期望在目标节点停下来
                     traversed += firstNodeGteRank.levelInfo[i].span;
                     firstNodeGteRank = firstNodeGteRank.levelInfo[i].forward;
@@ -1245,6 +1217,29 @@ public class ZSet<K> {
             } else {
                 return new ZScoreRangeSpec(end, endEx, start, startEx);
             }
+        }
+
+        /**
+         * 值是否大于等于下限
+         *
+         * @param value 要比较的score
+         * @param spec  范围描述信息
+         * @return true/false
+         */
+        @SuppressWarnings("BooleanMethodIsAlwaysInverted")
+        boolean zslValueGteMin(long value, ZScoreRangeSpec spec) {
+            return spec.minex ? compareScore(value, spec.min) > 0 : compareScore(value, spec.min) >= 0;
+        }
+
+        /**
+         * 值是否小于等于上限
+         *
+         * @param value 要比较的score
+         * @param spec  范围描述信息
+         * @return true/false
+         */
+        boolean zslValueLteMax(long value, ZScoreRangeSpec spec) {
+            return spec.maxex ? compareScore(value, spec.max) < 0 : compareScore(value, spec.max) <= 0;
         }
 
         /**
