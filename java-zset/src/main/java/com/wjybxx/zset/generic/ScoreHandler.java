@@ -19,9 +19,11 @@ package com.wjybxx.zset.generic;
 import java.util.Comparator;
 
 /**
+ * 泛型化的分数处理器
+ *
  * <b>Note:</b>
  * 1. score对象必须实现为不可变，一定不可以修改里面的内容。
- * 2. {@link #sum(Object, Object)}必须
+ * 2. {@link #sum(Object, Object)}必须返回一个新对象。
  * 3. 不要在score对象中存储杂七杂八的属性，如果想存储一些额外的数据，请存储在key中。
  *
  * @param <T> the type of score

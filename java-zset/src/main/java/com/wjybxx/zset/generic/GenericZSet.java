@@ -34,8 +34,8 @@ import java.util.stream.IntStream;
  * 1. ZSET中的排名从0开始
  * 2. ZSET使用<b>键</b>的compare结果判断两个键是否相等，而不是equals方法，因此必须保证键不同时compare结果一定不为0。
  * 3. 又由于key需要存放于{@link HashMap}中，因此“相同”的key必须有相同的hashCode，且equals方法返回true。
- * <b>key的关键属性最好是number或string</b>
- * 4. 请查看{@link ScoreHandler}中的注释事项。
+ * <b>PS:key的关键属性最好是number或string</b>
+ * 4. 请查看{@link ScoreHandler}中的注意事项。
  *
  * <p>e
  * 这里只实现了redis zset中的几个常用的接口，扩展不是太麻烦，可以自己根据需要实现。
@@ -136,7 +136,7 @@ public class GenericZSet<K, S> {
     }
 
     /**
-     * 为有序集的成员member的score值加上增量increment。
+     * 为有序集的成员member的score值加上增量increment，并更新到正确的排序位置。
      * 如果有序集中不存在member，就在有序集中添加一个member，score是increment（就好像它之前的score是0）
      *
      * @param increment 要增加的值
@@ -734,7 +734,7 @@ public class GenericZSet<K, S> {
             /* We may have multiple elements with the same score, what we need
              * is to find the element with both the right score and object. */
             final SkipListNode<K, S> targetNode = preNode.levelInfo[0].forward;
-            if (targetNode != null && scoreEquals(score, targetNode.score) && objEquals(targetNode.obj, obj)) {
+            if (targetNode != null && scoreEquals(targetNode.score, score) && objEquals(targetNode.obj, obj)) {
                 zslDeleteNode(targetNode, update);
                 return true;
             }
@@ -823,8 +823,9 @@ public class GenericZSet<K, S> {
          * @return true/false
          */
         private boolean isScoreRangeEmpty(ZScoreRangeSpec<S> range) {
-            return compareScore(range.min, range.max) > 0
-                    || (scoreEquals(range.min, range.max) && (range.minex || range.maxex));
+            // TODO 这里可能产生一些奇怪的语义
+            return compareScore(range.min, range.max) > 0 ||
+                    (scoreEquals(range.min, range.max) && (range.minex || range.maxex));
         }
 
         /**
@@ -1256,66 +1257,6 @@ public class GenericZSet<K, S> {
          * 它表示当前的指针跨越了多少个节点。span用于计算成员排名(rank)，这是Redis对于SkipList做的一个扩展。
          */
         int span;
-    }
-
-    /**
-     * {@link GenericZSet}中“score”范围描述信息 - specification模式
-     */
-    public static class ZScoreRangeSpec<S> {
-        /**
-         * 最低分数
-         */
-        final S min;
-        /**
-         * 最高分数
-         */
-        final S max;
-        /**
-         * 是否去除下限
-         * exclusive
-         */
-        final boolean minex;
-        /**
-         * 是否去除上限
-         * exclusive
-         */
-        final boolean maxex;
-
-        public ZScoreRangeSpec(S min, S max) {
-            this.min = min;
-            this.max = max;
-            this.minex = false;
-            this.maxex = false;
-        }
-
-        public ZScoreRangeSpec(S min, S max, boolean minex, boolean maxex) {
-            this.min = min;
-            this.max = max;
-            this.minex = minex;
-            this.maxex = maxex;
-        }
-    }
-
-    /**
-     * zset中单个成员信息
-     */
-    public static class Member<K, S> {
-
-        private final K member;
-        private final S score;
-
-        Member(K member, S score) {
-            this.member = member;
-            this.score = score;
-        }
-
-        public K getMember() {
-            return member;
-        }
-
-        public S getScore() {
-            return score;
-        }
     }
 
     // - 测试用例
