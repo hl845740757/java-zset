@@ -35,6 +35,14 @@ import java.util.stream.IntStream;
  * 2. ZSET使用<b>键</b>的compare结果判断两个键是否相等，而不是equals方法，因此必须保证键不同时compare结果一定不为0。
  * 3. 又由于key需要存放于{@link HashMap}中，因此“相同”的key必须有相同的hashCode，且equals方法返回true。
  * <b>手动加粗:key的关键属性最好是number或string</b>
+ * <p>
+ * 4. 我们允许zset中的成员是降序排列的(ScoreComparator决定)，可以更好的支持根据score降序的排行榜，
+ * 而不是强迫你总是调用反转系列接口{@code zrev...}，那样的设计不符合人的正常思维，就很容易出错。
+ * <p>
+ * 5. 我们修改了redis中根据min和max查找和删除成员的接口，修改为start和end，当根据score范围查找或删除元素时，并不要求start小于等于end，我们会处理它们的大小关系。<br>
+ * Q: 为什么要这么改动呢？<br>
+ * A: 举个栗子：假如ScoreComparator比较两个long类型的score是逆序的，现在要删除排行榜中 1-10000分的成员，如果方法告诉你要传入的的是min和max，
+ * 你会很自然的传入想到 (1,10000) 而不是 (10000,1)。因此，如果接口不做调整，这个接口就太反人类了，谁用都得错。
  *
  * <p>
  * 这里只实现了redis zset中的几个常用的接口，扩展不是太麻烦，可以自己根据需要实现。
@@ -55,8 +63,8 @@ public class ZSet<K> {
      */
     private final SkipList<K> zsl;
 
-    private ZSet(Comparator<K> keyComparator) {
-        this.zsl = new SkipList<>(keyComparator);
+    private ZSet(Comparator<K> keyComparator, ScoreComparator scoreComparator) {
+        this.zsl = new SkipList<>(keyComparator, scoreComparator);
     }
 
     /**
@@ -76,40 +84,44 @@ public class ZSet<K> {
     /**
      * 创建一个键为string类型的zset
      *
+     * @param scoreComparator score比较器，默认实现见{@link ScoreComparators}
      * @return zset
      */
-    public static ZSet<String> newStringKeyZSet() {
-        return new ZSet<>(String::compareTo);
+    public static ZSet<String> newStringKeyZSet(ScoreComparator scoreComparator) {
+        return new ZSet<>(String::compareTo, scoreComparator);
     }
 
     /**
      * 创建一个键为long类型的zset
      *
+     * @param scoreComparator score比较器，默认实现见{@link ScoreComparators}
      * @return zset
      */
-    public static ZSet<Long> newLongKeyZSet() {
-        return new ZSet<>(Long::compareTo);
+    public static ZSet<Long> newLongKeyZSet(ScoreComparator scoreComparator) {
+        return new ZSet<>(Long::compareTo, scoreComparator);
     }
 
     /**
      * 创建一个键为int类型的zset
      *
+     * @param scoreComparator score比较器，默认实现见{@link ScoreComparators}
      * @return zset
      */
-    public static ZSet<Integer> newIntKeyZSet() {
-        return new ZSet<>(Integer::compareTo);
+    public static ZSet<Integer> newIntKeyZSet(ScoreComparator scoreComparator) {
+        return new ZSet<>(Integer::compareTo, scoreComparator);
     }
 
     /**
      * 创建一个自定义键类型的zset
      *
-     * @param keyComparator 键值比较器，当score比较结果相等时，比较key。
-     *                      <b>请仔细阅读类文档中的注意事项</b>。
-     * @param <K>           键的类型
+     * @param keyComparator   键值比较器，当score比较结果相等时，比较key。
+     *                        <b>请仔细阅读类文档中的注意事项</b>。
+     * @param scoreComparator score比较器，默认实现见{@link ScoreComparators}
+     * @param <K>             键的类型
      * @return zset
      */
-    public static <K> ZSet<K> newGenericKeyZSet(Comparator<K> keyComparator) {
-        return new ZSet<>(keyComparator);
+    public static <K> ZSet<K> newGenericKeyZSet(Comparator<K> keyComparator, ScoreComparator scoreComparator) {
+        return new ZSet<>(keyComparator, scoreComparator);
     }
     // -------------------------------------------------------- insert -----------------------------------------------
 
@@ -123,8 +135,7 @@ public class ZSet<K> {
     public void zadd(final long score, @Nonnull final K member) {
         final Long oldScore = dict.put(member, score);
         if (oldScore != null) {
-            // 这里小心，score是基本类型，因此oldScore会自动拆箱，因此可以 == 比较，否则不能 == 比较
-            if (oldScore != score) {
+            if (!zsl.scoreEquals(oldScore, score)) {
                 zsl.zslDelete(oldScore, member);
                 zsl.zslInsert(score, member);
             }
@@ -169,14 +180,14 @@ public class ZSet<K> {
     // region 通过score删除成员
 
     /**
-     * 移除zset中所有score值介于min和max之间(包括等于min或max)的成员
+     * 移除zset中所有score值介于start和end之间(包括等于start或end)的成员
      *
-     * @param min 最低分 inclusive
-     * @param max 最高分 inclusive
+     * @param start 起始分数 inclusive
+     * @param end   截止分数 inclusive
      * @return 删除的成员数目
      */
-    public int zremrangeByScore(long min, long max) {
-        return zremrangeByScore(new ZScoreRangeSpec(min, max));
+    public int zremrangeByScore(long start, long end) {
+        return zremrangeByScore(zsl.newRangeSpec(start, end));
     }
 
     /**
@@ -185,7 +196,17 @@ public class ZSet<K> {
      * @param spec score范围区间
      * @return 删除的成员数目
      */
-    public int zremrangeByScore(@Nonnull ZScoreRangeSpec spec) {
+    private int zremrangeByScore(@Nonnull ScoreRangeSpec spec) {
+        return zremrangeByScore(zsl.newRangeSpec(spec));
+    }
+
+    /**
+     * 移除zset中所有score值在范围区间的成员
+     *
+     * @param spec score范围区间
+     * @return 删除的成员数目
+     */
+    private int zremrangeByScore(@Nonnull ZScoreRangeSpec spec) {
         return zsl.zslDeleteRangeByScore(spec, dict);
     }
 
@@ -400,29 +421,66 @@ public class ZSet<K> {
     // region 通过分数查询
 
     /**
-     * 返回有序集合中的分数在min和max之间的所有成员（包括分数等于max或者min的成员）。
+     * 返回有序集合中的分数在start和end之间的所有成员（包括分数等于start或者end的成员）。
      * 成员被认为是从低分到高分排序的。
      * 具有相同分数的成员按字典序排列。
      *
-     * @param minScore 最低分数 inclusive
-     * @param maxScore 最高分数 inclusive
+     * @param start 起始分数 inclusive
+     * @param end   截止分数 inclusive
      * @return memberInfo
      */
-    public List<Member<K>> zrangeByScore(long minScore, long maxScore) {
-        return zrangeByScoreWithOptions(new ZScoreRangeSpec(minScore, maxScore), 0, -1, false);
+    public List<Member<K>> zrangeByScore(long start, long end) {
+        return zrangeByScoreWithOptions(zsl.newRangeSpec(start, end), 0, -1, false);
     }
 
     /**
-     * 返回有序集合中的分数在min和max之间的所有成员（包括分数等于max或者min的成员）。
+     * 返回有序集合中的分数在指定范围区间的所有成员。
+     * 成员被认为是从低分到高分排序的。
+     * 具有相同分数的成员按字典序排列。
+     *
+     * @param spec 范围描述信息
+     * @return memberInfo
+     */
+    public List<Member<K>> zrangeByScore(ScoreRangeSpec spec) {
+        return zrangeByScoreWithOptions(zsl.newRangeSpec(spec), 0, -1, false);
+    }
+
+    /**
+     * 返回有序集合中的分数在start和end之间的所有成员（包括分数等于start或者end的成员）。
      * 成员被认为是从高分到低分排序的。
      * 具有相同score值的成员按字典序的反序排列。
      *
-     * @param minScore 最低分数 inclusive
-     * @param maxScore 最高分数 inclusive
+     * @param start 起始分数 inclusive
+     * @param end   截止分数 inclusive
      * @return memberInfo
      */
-    public List<Member<K>> zrevrangeByScore(final long minScore, final long maxScore) {
-        return zrangeByScoreWithOptions(new ZScoreRangeSpec(minScore, maxScore), 0, -1, true);
+    public List<Member<K>> zrevrangeByScore(final long start, final long end) {
+        return zrangeByScoreWithOptions(zsl.newRangeSpec(start, end), 0, -1, true);
+    }
+
+    /**
+     * 返回有序集合中的分数在指定范围之间的所有成员。
+     * 成员被认为是从高分到低分排序的。
+     * 具有相同score值的成员按字典序的反序排列。     *
+     *
+     * @param rangeSpec score范围区间
+     * @return 删除的成员数目
+     */
+    public List<Member<K>> zrevrangeByScore(ScoreRangeSpec rangeSpec) {
+        return zrangeByScoreWithOptions(zsl.newRangeSpec(rangeSpec), 0, -1, true);
+    }
+
+    /**
+     * 返回zset中指定分数区间内的成员，并按照指定顺序返回
+     *
+     * @param rangeSpec score范围描述信息
+     * @param offset    偏移量(用于分页)  大于等于0
+     * @param limit     返回的成员数量(用于分页) 小于0表示不限制
+     * @param reverse   是否逆序
+     * @return memberInfo
+     */
+    public List<Member<K>> zrangeByScoreWithOptions(final ScoreRangeSpec rangeSpec, int offset, int limit, boolean reverse) {
+        return zrangeByScoreWithOptions(zsl.newRangeSpec(rangeSpec), offset, limit, reverse);
     }
 
     /**
@@ -434,7 +492,7 @@ public class ZSet<K> {
      * @param reverse 是否逆序
      * @return memberInfo
      */
-    public List<Member<K>> zrangeByScoreWithOptions(final ZScoreRangeSpec range, int offset, int limit, boolean reverse) {
+    private List<Member<K>> zrangeByScoreWithOptions(final ZScoreRangeSpec range, int offset, int limit, boolean reverse) {
         if (offset < 0) {
             throw new IllegalArgumentException("offset" + ": " + offset + " (expected: >= 0)");
         }
@@ -468,11 +526,11 @@ public class ZSet<K> {
         while (listNode != null && limit-- != 0) {
             /* Abort when the node is no longer in range. */
             if (reverse) {
-                if (!SkipList.zslValueGteMin(listNode.score, range)) {
+                if (!zsl.zslValueGteMin(listNode.score, range)) {
                     break;
                 }
             } else {
-                if (!SkipList.zslValueLteMax(listNode.score, range)) {
+                if (!zsl.zslValueLteMax(listNode.score, range)) {
                     break;
                 }
             }
@@ -591,6 +649,10 @@ public class ZSet<K> {
          */
         private final Comparator<K> objComparator;
         /**
+         * 分数比较器
+         */
+        private final ScoreComparator scoreComparator;
+        /**
          * 跳表头结点 - 哨兵
          * 1. 可以简化判定逻辑
          * 2. 恰好可以使得rank从1开始
@@ -613,8 +675,9 @@ public class ZSet<K> {
          */
         private int level = 1;
 
-        SkipList(Comparator<K> objComparator) {
+        SkipList(Comparator<K> objComparator, ScoreComparator scoreComparator) {
             this.objComparator = objComparator;
+            this.scoreComparator = scoreComparator;
             this.header = zslCreateNode(ZSKIPLIST_MAXLEVEL, 0, null);
         }
 
@@ -756,7 +819,7 @@ public class ZSet<K> {
             /* We may have multiple elements with the same score, what we need
              * is to find the element with both the right score and object. */
             final SkipListNode<K> targetNode = preNode.levelInfo[0].forward;
-            if (targetNode != null && score == targetNode.score && objEquals(targetNode.obj, obj)) {
+            if (targetNode != null && scoreEquals(targetNode.score, score) && objEquals(targetNode.obj, obj)) {
                 zslDeleteNode(targetNode, update);
                 return true;
             }
@@ -802,7 +865,6 @@ public class ZSet<K> {
             this.length--;
         }
 
-
         /**
          * 值是否大于等于下限
          *
@@ -811,8 +873,8 @@ public class ZSet<K> {
          * @return true/false
          */
         @SuppressWarnings("BooleanMethodIsAlwaysInverted")
-        static boolean zslValueGteMin(long value, ZScoreRangeSpec spec) {
-            return spec.minex ? (value > spec.min) : (value >= spec.min);
+        boolean zslValueGteMin(long value, ZScoreRangeSpec spec) {
+            return spec.minex ? compareScore(value, spec.min) > 0 : compareScore(value, spec.min) >= 0;
         }
 
         /**
@@ -822,8 +884,8 @@ public class ZSet<K> {
          * @param spec  范围描述信息
          * @return true/false
          */
-        static boolean zslValueLteMax(long value, ZScoreRangeSpec spec) {
-            return spec.maxex ? (value < spec.max) : (value <= spec.max);
+        boolean zslValueLteMax(long value, ZScoreRangeSpec spec) {
+            return spec.maxex ? compareScore(value, spec.max) < 0 : compareScore(value, spec.max) <= 0;
         }
 
         /**
@@ -868,9 +930,9 @@ public class ZSet<K> {
          * @param range 范围描述信息
          * @return true/false
          */
-        private static boolean isScoreRangeEmpty(ZScoreRangeSpec range) {
-            return range.min > range.max ||
-                    (range.min == range.max && (range.minex || range.maxex));
+        private boolean isScoreRangeEmpty(ZScoreRangeSpec range) {
+            // 这里和redis有所区别，这里min一定小于等于max
+            return scoreEquals(range.min, range.max) && (range.minex || range.maxex);
         }
 
         /**
@@ -1146,6 +1208,39 @@ public class ZSet<K> {
             return level;
         }
 
+
+        /**
+         * @param start 起始分数
+         * @param end   截止分数
+         * @return spec
+         */
+        private ZScoreRangeSpec newRangeSpec(long start, long end) {
+            return newRangeSpec(start, false, end, false);
+        }
+
+        /**
+         * @param rangeSpec 开放给用户的范围描述信息
+         * @return spec
+         */
+        private ZScoreRangeSpec newRangeSpec(ScoreRangeSpec rangeSpec) {
+            return newRangeSpec(rangeSpec.getStart(), rangeSpec.isStartEx(), rangeSpec.getEnd(), rangeSpec.isEndEx());
+        }
+
+        /**
+         * @param start   起始分数
+         * @param startEx 是否去除起始分数
+         * @param end     截止分数
+         * @param endEx   是否去除截止分数
+         * @return spec
+         */
+        private ZScoreRangeSpec newRangeSpec(long start, boolean startEx, long end, boolean endEx) {
+            if (compareScore(start, end) <= 0) {
+                return new ZScoreRangeSpec(start, startEx, end, endEx);
+            } else {
+                return new ZScoreRangeSpec(end, endEx, start, startEx);
+            }
+        }
+
         /**
          * 比较score和key的大小，分数作为第一排序条件，然后，相同分数的成员按照字典规则相对排序
          *
@@ -1155,10 +1250,11 @@ public class ZSet<K> {
          * @return 0 表示equals
          */
         private int compareScoreAndObj(SkipListNode<K> forward, long score, K obj) {
-            if (forward.score == score) {
-                return compareObj(forward.obj, obj);
+            final int scoreCompareR = compareScore(forward.score, score);
+            if (scoreCompareR != 0) {
+                return scoreCompareR;
             }
-            return (forward.score < score) ? -1 : 1;
+            return compareObj(forward.obj, obj);
         }
 
         /**
@@ -1179,6 +1275,25 @@ public class ZSet<K> {
         private boolean objEquals(K objA, K objB) {
             // 不使用equals，而是使用compare
             return compareObj(objA, objB) == 0;
+        }
+
+        /**
+         * 比较两个分数的大小
+         *
+         * @return 0表示相等
+         */
+        private int compareScore(long score1, long score2) {
+            return scoreComparator.compare(score1, score2);
+        }
+
+        /**
+         * 判断第一个分数是否和第二个分数相等
+         *
+         * @return true/false
+         * @apiNote 使用compare == 0判断相等
+         */
+        private boolean scoreEquals(long score1, long score2) {
+            return compareScore(score1, score2) == 0;
         }
 
         /**
@@ -1264,28 +1379,21 @@ public class ZSet<K> {
          */
         final long min;
         /**
-         * 最高分数
-         */
-        final long max;
-        /**
          * 是否去除下限
          * exclusive
          */
         final boolean minex;
+        /**
+         * 最高分数
+         */
+        final long max;
         /**
          * 是否去除上限
          * exclusive
          */
         final boolean maxex;
 
-        ZScoreRangeSpec(long min, long max) {
-            this.min = min;
-            this.max = max;
-            this.minex = false;
-            this.maxex = false;
-        }
-
-        ZScoreRangeSpec(long min, long max, boolean minex, boolean maxex) {
+        ZScoreRangeSpec(long min, boolean minex, long max, boolean maxex) {
             this.min = min;
             this.max = max;
             this.minex = minex;
@@ -1296,7 +1404,7 @@ public class ZSet<K> {
     // - 测试用例
 
     public static void main(String[] args) {
-        final ZSet<Integer> zSet = ZSet.newIntKeyZSet();
+        final ZSet<Integer> zSet = ZSet.newIntKeyZSet(ScoreComparators.scoreComparator(false));
 
         // 插入100个数据，member编号就是1-100
         IntStream.rangeClosed(1, 100).forEach(member -> {
