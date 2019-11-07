@@ -74,7 +74,7 @@ public class GenericZSet<K, S> {
     /**
      * @return zset中的成员数量
      */
-    public int count() {
+    public int zcard() {
         return zsl.length();
     }
 
@@ -625,6 +625,52 @@ public class GenericZSet<K, S> {
     }
     // endregion
 
+    // region 统计分数人数
+
+    /**
+     * 返回有序集key中，score值在指定区间(包括score值等于start或end)的成员
+     *
+     * @param start 起始分数
+     * @param end   截止分数
+     * @return 分数区间段内的成员数量
+     */
+    public int zcount(S start, S end) {
+        return zcountInternal(zsl.newRangeSpec(start, end));
+    }
+
+    /**
+     * 返回有序集key中，score值在指定区间的成员
+     *
+     * @param rangeSpec score区间描述信息
+     * @return 分数区间段内的成员数量
+     */
+    public int zcount(ScoreRangeSpec<S> rangeSpec) {
+        return zcountInternal(zsl.newRangeSpec(rangeSpec));
+    }
+
+    /**
+     * 返回有序集key中，score值在指定区间的成员
+     *
+     * @param range score区间描述信息
+     * @return 分数区间段内的成员数量
+     */
+    private int zcountInternal(final ZScoreRangeSpec<S> range) {
+        int count = 0;
+        final SkipListNode<K, S> firstNodeInRange = zsl.zslFirstInRange(range);
+
+        if (firstNodeInRange != null) {
+            final int firstNodeRank = zsl.zslGetRank(firstNodeInRange.score, firstNodeInRange.obj);
+
+            /* 如果firstNodeInRange不为null，那么lastNode也一定不为null(最坏的情况下firstNode就是lastNode) */
+            final SkipListNode<K, S> lastNodeInRange = zsl.zslLastInRange(range);
+            assert lastNodeInRange != null;
+            final int lastNodeRank = zsl.zslGetRank(lastNodeInRange.score, lastNodeInRange.obj);
+
+            return lastNodeRank - firstNodeRank + 1;
+        }
+        return count;
+    }
+    // endregion
     // ------------------------------------------------------- 内部实现 ----------------------------------------
 
     /**
@@ -993,7 +1039,6 @@ public class GenericZSet<K, S> {
             }
             return lastNodeLteMax;
         }
-
 
         /**
          * 删除指定分数区间的所有节点。
@@ -1415,14 +1460,14 @@ public class GenericZSet<K, S> {
     public static void main(String[] args) {
         final GenericZSet<String, Long> zSet = newStringKeyZSet(ScoreHandlers.longScoreHandler());
 
-        // 插入100个数据，member编号就是1-100
-        IntStream.rangeClosed(1, 100).forEach(member -> {
+        // 插入数据
+        IntStream.rangeClosed(1, 10000).forEach(member -> {
             // 使用nextInt避免越界，导致一些奇怪的值
             zSet.zadd(ThreadLocalRandom.current().nextLong(0, 10000), Integer.toString(member));
         });
 
-        // 重新插入
-        IntStream.rangeClosed(1, 100).forEach(member -> {
+        // 增量更新
+        IntStream.rangeClosed(1, 10000).forEach(member -> {
             zSet.zincrby(ThreadLocalRandom.current().nextLong(0, 10000), Integer.toString(member));
         });
 
