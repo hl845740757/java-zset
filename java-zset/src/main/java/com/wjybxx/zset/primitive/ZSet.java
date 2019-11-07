@@ -34,7 +34,7 @@ import java.util.stream.IntStream;
  * 1. ZSET中的排名从0开始
  * 2. ZSET使用<b>键</b>的compare结果判断两个键是否相等，而不是equals方法，因此必须保证键不同时compare结果一定不为0。
  * 3. 又由于key需要存放于{@link HashMap}中，因此“相同”的key必须有相同的hashCode，且equals方法返回true。
- * <b>PS:key的关键属性最好是number或string</b>
+ * <b>手动加粗:key的关键属性最好是number或string</b>
  *
  * <p>
  * 这里只实现了redis zset中的几个常用的接口，扩展不是太麻烦，可以自己根据需要实现。
@@ -166,6 +166,8 @@ public class ZSet<K> {
         }
     }
 
+    // region 通过score删除成员
+
     /**
      * 移除zset中所有score值介于min和max之间(包括等于min或max)的成员
      *
@@ -178,13 +180,27 @@ public class ZSet<K> {
     }
 
     /**
-     * 移除zset中所有score值在范围描述期间的成员(可以自定义是否包含上下界)
+     * 移除zset中所有score值在范围区间的成员
      *
      * @param spec score范围区间
      * @return 删除的成员数目
      */
     public int zremrangeByScore(@Nonnull ZScoreRangeSpec spec) {
         return zsl.zslDeleteRangeByScore(spec, dict);
+    }
+
+    // endregion
+
+    // region 通过排名删除成员
+
+    /**
+     * 删除指定排名的成员
+     *
+     * @param rank 排名 0-based
+     * @return 删除成功则返回true，否则返回false
+     */
+    public boolean zremByRank(int rank) {
+        return zremrangeByRank(rank, rank) > 0;
     }
 
     /**
@@ -259,6 +275,9 @@ public class ZSet<K> {
          * The range is empty when start > end or start >= length. */
         return start > end || start >= zslLength;
     }
+    // endregion
+
+    // region 限制成员数量
 
     /**
      * 删除zset中尾部多余的成员，将zset中的成员数量限制到count之内。
@@ -287,7 +306,20 @@ public class ZSet<K> {
         }
         return zremrangeByRank(0, zsl.length() - 1 - count);
     }
+    // endregion
+
     // -------------------------------------------------------- query -----------------------------------------------
+
+    /**
+     * 返回有序集成员member的score值。
+     * 如果member成员不是有序集的成员，返回null - 这里返回任意的基础值都是不合理的，因此必须返回null。
+     *
+     * @param member 成员id
+     * @return score
+     */
+    public Long zscore(@Nonnull K member) {
+        return dict.get(member);
+    }
 
     /**
      * 返回有序集中成员member的排名。其中有序集成员按score值递增(从小到大)顺序排列。
@@ -332,20 +364,45 @@ public class ZSet<K> {
     }
 
     /**
-     * 返回有序集成员member的score值。
-     * 如果member元素不是有序集的成员，返回null - 这里返回任意的基础值都是不合理的，因此必须返回null。
+     * 获取指定排名的成员数据。
+     * 成员被认为是从低分到高分排序的。
+     * 具有相同分数的成员按字典序排列。
      *
-     * @param member 成员id
-     * @return score
+     * @param rank 排名 0-based
+     * @return memver，如果不存在，则返回null
      */
-    public Long zscore(@Nonnull K member) {
-        return dict.get(member);
+    public Member<K> zmemberByRank(int rank) {
+        if (rank < 0 || rank >= zsl.length()) {
+            return null;
+        }
+        final SkipListNode<K> node = zsl.zslGetElementByRank(rank + 1);
+        assert null != node;
+        return new Member<>(node.obj, node.score);
     }
 
     /**
-     * 返回有序集合中的分数在min和max之间的所有元素（包括分数等于max或者min的元素）。
-     * 元素被认为是从低分到高分排序的。
-     * 具有相同分数的元素按字典序排列。
+     * 获取指定逆序排名的成员数据。
+     * 成员被认为是从高分到低分排序的。
+     * 具有相同score值的成员按字典序的反序排列。
+     *
+     * @param rank 排名 0-based
+     * @return memver，如果不存在，则返回null
+     */
+    public Member<K> zrevmemberByRank(int rank) {
+        if (rank < 0 || rank >= zsl.length()) {
+            return null;
+        }
+        final SkipListNode<K> node = zsl.zslGetElementByRank(zsl.length() - rank);
+        assert null != node;
+        return new Member<>(node.obj, node.score);
+    }
+
+    // region 通过分数查询
+
+    /**
+     * 返回有序集合中的分数在min和max之间的所有成员（包括分数等于max或者min的成员）。
+     * 成员被认为是从低分到高分排序的。
+     * 具有相同分数的成员按字典序排列。
      *
      * @param minScore 最低分数 inclusive
      * @param maxScore 最高分数 inclusive
@@ -356,8 +413,8 @@ public class ZSet<K> {
     }
 
     /**
-     * 返回有序集合中的分数在min和max之间的所有元素（包括分数等于max或者min的元素）。
-     * 元素被认为是从高分到低分排序的。
+     * 返回有序集合中的分数在min和max之间的所有成员（包括分数等于max或者min的成员）。
+     * 成员被认为是从高分到低分排序的。
      * 具有相同score值的成员按字典序的反序排列。
      *
      * @param minScore 最低分数 inclusive
@@ -431,6 +488,9 @@ public class ZSet<K> {
         }
         return result;
     }
+    // endregion
+
+    // region 通过排名查询
 
     /**
      * 查询指定排名区间的成员id和分数，结果排名由低到高。
@@ -497,40 +557,8 @@ public class ZSet<K> {
         }
         return result;
     }
+    // endregion
 
-    /**
-     * 获取指定排名的成员数据。
-     * 元素被认为是从低分到高分排序的。
-     * 具有相同分数的元素按字典序排列。
-     *
-     * @param rank 排名 0-based
-     * @return memver，如果不存在，则返回null
-     */
-    public Member<K> zmemberByRank(int rank) {
-        if (rank < 0 || rank >= zsl.length()) {
-            return null;
-        }
-        final SkipListNode<K> node = zsl.zslGetElementByRank(rank + 1);
-        assert null != node;
-        return new Member<>(node.obj, node.score);
-    }
-
-    /**
-     * 获取指定逆序排名的成员数据。
-     * 元素被认为是从高分到低分排序的。
-     * 具有相同score值的成员按字典序的反序排列。
-     *
-     * @param rank 排名 0-based
-     * @return memver，如果不存在，则返回null
-     */
-    public Member<K> zrevmemberByRank(int rank) {
-        if (rank < 0 || rank >= zsl.length()) {
-            return null;
-        }
-        final SkipListNode<K> node = zsl.zslGetElementByRank(zsl.length() - rank);
-        assert null != node;
-        return new Member<>(node.obj, node.score);
-    }
     // ------------------------------------------------------- 内部实现 ----------------------------------------
 
     /**
@@ -541,7 +569,7 @@ public class ZSet<K> {
      * @version 1.0
      * date - 2019/11/4
      */
-    public static class SkipList<K> {
+    private static class SkipList<K> {
 
         /**
          * 跳表允许最大层级
@@ -1093,7 +1121,7 @@ public class ZSet<K> {
         private static <K> SkipListNode<K> zslCreateNode(int level, long score, K obj) {
             final SkipListNode<K> node = new SkipListNode<>(obj, score, new SkipListLevel[level]);
             for (int index = 0; index < level; index++) {
-                node.levelInfo[index] = new SkipListLevel<K>();
+                node.levelInfo[index] = new SkipListLevel<>();
             }
             return node;
         }
@@ -1183,7 +1211,7 @@ public class ZSet<K> {
     /**
      * 跳表节点
      */
-    static class SkipListNode<K> {
+    private static class SkipListNode<K> {
         /**
          * 节点对应的数据id
          */
@@ -1215,7 +1243,7 @@ public class ZSet<K> {
     /**
      * 跳表层级
      */
-    static class SkipListLevel<K> {
+    private static class SkipListLevel<K> {
         /**
          * 每层对应1个后向指针 (后继节点)
          */
@@ -1225,6 +1253,44 @@ public class ZSet<K> {
          * 它表示当前的指针跨越了多少个节点。span用于计算成员排名(rank)，这是Redis对于SkipList做的一个扩展。
          */
         int span;
+    }
+
+    /**
+     * {@link ZSet}中“score”范围描述信息 - specification模式
+     */
+    private static class ZScoreRangeSpec {
+        /**
+         * 最低分数
+         */
+        final long min;
+        /**
+         * 最高分数
+         */
+        final long max;
+        /**
+         * 是否去除下限
+         * exclusive
+         */
+        final boolean minex;
+        /**
+         * 是否去除上限
+         * exclusive
+         */
+        final boolean maxex;
+
+        ZScoreRangeSpec(long min, long max) {
+            this.min = min;
+            this.max = max;
+            this.minex = false;
+            this.maxex = false;
+        }
+
+        ZScoreRangeSpec(long min, long max, boolean minex, boolean maxex) {
+            this.min = min;
+            this.max = max;
+            this.minex = minex;
+            this.maxex = maxex;
+        }
     }
 
     // - 测试用例
@@ -1248,4 +1314,5 @@ public class ZSet<K> {
         // 由于不是很好调试，建议在debug界面根据输出信息调试
         System.out.println("debug");
     }
+
 }

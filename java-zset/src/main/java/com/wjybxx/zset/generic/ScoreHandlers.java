@@ -37,11 +37,11 @@ public class ScoreHandlers {
     }
 
     /**
-     * @param reverse 是否降序
+     * @param desc 是否降序
      * @return Long类型的score处理器
      */
-    public static ScoreHandler<Long> longScoreHandler(boolean reverse) {
-        return reverse ? DesLongScoreHandler.INSTANCE : LongScoreHandler.INSTANCE;
+    public static ScoreHandler<Long> longScoreHandler(boolean desc) {
+        return desc ? DescLongScoreHandler.INSTANCE : LongScoreHandler.INSTANCE;
     }
 
     /**
@@ -69,11 +69,11 @@ public class ScoreHandlers {
     /**
      * Long类型的score处理器 - 降序
      */
-    private static class DesLongScoreHandler implements ScoreHandler<Long> {
+    private static class DescLongScoreHandler implements ScoreHandler<Long> {
 
-        private static final DesLongScoreHandler INSTANCE = new DesLongScoreHandler();
+        private static final DescLongScoreHandler INSTANCE = new DescLongScoreHandler();
 
-        private DesLongScoreHandler() {
+        private DescLongScoreHandler() {
 
         }
 

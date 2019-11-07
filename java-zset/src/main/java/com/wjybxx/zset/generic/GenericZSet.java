@@ -34,11 +34,19 @@ import java.util.stream.IntStream;
  * 1. ZSET中的排名从0开始
  * 2. ZSET使用<b>键</b>的compare结果判断两个键是否相等，而不是equals方法，因此必须保证键不同时compare结果一定不为0。
  * 3. 又由于key需要存放于{@link HashMap}中，因此“相同”的key必须有相同的hashCode，且equals方法返回true。
- * <b>PS:key的关键属性最好是number或string</b>
+ * <b>手动加粗:key的关键属性最好是number或string</b>
+ * <p>
+ * 4. 请查看{@link ScoreHandler}中关于score的注意事项。
+ * <p>
+ * 5. 我们允许zset中的成员是降序排列的(ScoreComparator决定)，可以更好的支持根据score降序的排行榜，
+ * 而不是强迫你总是调用反转系列接口{@code zrev...}，那样的设计不符合人的正常思维，就很容易出错。
+ * <p>
+ * 6. 我们修改了redis中根据min和max查找和删除成员的接口，修改为start和end，当根据score范围查找或删除元素时，并不要求start小于等于end，我们会处理它们的大小关系。<br>
+ * Q: 为什么要这么改动呢？<br>
+ * A: 举个栗子：假如ScoreComparator比较两个long类型的score是逆序的，现在要删除排行榜中 1-10000分的成员，如果方法告诉你要传入的的是min和max，
+ * 你会很自然的传入想到 (1,10000) 而不是 (10000,1)。因此，如果接口不做调整，这个接口就太反人类了，谁用都得错。
  *
- * 4. 请查看{@link ScoreHandler}中的注意事项。
- *
- * <p>e
+ * <p>
  * 这里只实现了redis zset中的几个常用的接口，扩展不是太麻烦，可以自己根据需要实现。
  *
  * <p>
@@ -180,25 +188,50 @@ public class GenericZSet<K, S> {
         }
     }
 
+    // region 通过score删除成员
+
     /**
-     * 移除zset中所有score值介于min和max之间(包括等于min或max)的成员
+     * 移除zset中所有score值介于start和end之间(包括等于start或end)的成员
      *
-     * @param min 最低分 inclusive
-     * @param max 最高分 inclusive
+     * @param start 起始分数 inclusive
+     * @param end   截止分数 inclusive
      * @return 删除的成员数目
      */
-    public int zremrangeByScore(S min, S max) {
-        return zremrangeByScore(new ZScoreRangeSpec<>(min, max));
+    public int zremrangeByScore(S start, S end) {
+        return zremrangeByScore(zsl.newRangeSpec(start, end));
     }
 
     /**
-     * 移除zset中所有score值在范围描述期间的成员(可以自定义是否包含上下界)
+     * 移除zset中所有score值在范围区间的成员
      *
      * @param spec score范围区间
      * @return 删除的成员数目
      */
-    public int zremrangeByScore(@Nonnull ZScoreRangeSpec<S> spec) {
+    private int zremrangeByScore(@Nonnull ScoreRangeSpec<S> spec) {
+        return zremrangeByScore(zsl.newRangeSpec(spec));
+    }
+
+    /**
+     * 移除zset中所有score值在范围区间的成员
+     *
+     * @param spec score范围区间
+     * @return 删除的成员数目
+     */
+    private int zremrangeByScore(@Nonnull ZScoreRangeSpec<S> spec) {
         return zsl.zslDeleteRangeByScore(spec, dict);
+    }
+    // endregion
+
+    // region 通过排名删除成员
+
+    /**
+     * 删除指定排名的成员
+     *
+     * @param rank 排名 0-based
+     * @return 删除成功则返回true，否则返回false
+     */
+    public boolean zremByRank(int rank) {
+        return zremrangeByRank(rank, rank) > 0;
     }
 
     /**
@@ -273,6 +306,9 @@ public class GenericZSet<K, S> {
          * The range is empty when start > end or start >= length. */
         return start > end || start >= zslLength;
     }
+    // endregion
+
+    // region 限制成员数量
 
     /**
      * 删除zset中尾部多余的成员，将zset中的成员数量限制到count之内。
@@ -301,8 +337,20 @@ public class GenericZSet<K, S> {
         }
         return zsl.zslDeleteRangeByRank(1, zsl.length() - count, dict);
     }
+    // endregion
 
     // -------------------------------------------------------- query -----------------------------------------------
+
+    /**
+     * 返回有序集成员member的score值。
+     * 如果member成员不是有序集的成员，返回null - 这里返回任意的基础值都是不合理的，因此必须返回null。
+     *
+     * @param member 成员id
+     * @return score
+     */
+    public S zscore(@Nonnull K member) {
+        return dict.get(member);
+    }
 
     /**
      * 返回有序集中成员member的排名。其中有序集成员按score值递增(从小到大)顺序排列。
@@ -347,40 +395,102 @@ public class GenericZSet<K, S> {
     }
 
     /**
-     * 返回有序集成员member的score值。
-     * 如果member元素不是有序集的成员，返回null - 这里返回任意的基础值都是不合理的，因此必须返回null。
+     * 获取指定排名的成员数据。
+     * 成员被认为是从低分到高分排序的。
+     * 具有相同分数的成员按字典序排列。
      *
-     * @param member 成员id
-     * @return score
+     * @param rank 排名 0-based
+     * @return memver，如果不存在，则返回null
      */
-    public S zscore(@Nonnull K member) {
-        return dict.get(member);
+    public Member<K, S> zmemberByRank(int rank) {
+        if (rank < 0 || rank >= zsl.length()) {
+            return null;
+        }
+        final SkipListNode<K, S> node = zsl.zslGetElementByRank(rank + 1);
+        assert null != node;
+        return new Member<>(node.obj, node.score);
     }
 
     /**
-     * 返回有序集合中的分数在min和max之间的所有元素（包括分数等于max或者min的元素）。
-     * 元素被认为是从低分到高分排序的。
-     * 具有相同分数的元素按字典序排列。
-     *
-     * @param minScore 最低分数 inclusive
-     * @param maxScore 最高分数 inclusive
-     * @return memberInfo
-     */
-    public List<Member<K, S>> zrangeByScore(S minScore, S maxScore) {
-        return zrangeByScoreWithOptions(new ZScoreRangeSpec<>(minScore, maxScore), 0, -1, false);
-    }
-
-    /**
-     * 返回有序集合中的分数在min和max之间的所有元素（包括分数等于max或者min的元素）。
-     * 元素被认为是从高分到低分排序的。
+     * 获取指定逆序排名的成员数据。
+     * 成员被认为是从高分到低分排序的。
      * 具有相同score值的成员按字典序的反序排列。
      *
-     * @param minScore 最低分数 inclusive
-     * @param maxScore 最高分数 inclusive
+     * @param rank 排名 0-based
+     * @return memver，如果不存在，则返回null
+     */
+    public Member<K, S> zrevmemberByRank(int rank) {
+        if (rank < 0 || rank >= zsl.length()) {
+            return null;
+        }
+        final SkipListNode<K, S> node = zsl.zslGetElementByRank(zsl.length() - rank);
+        assert null != node;
+        return new Member<>(node.obj, node.score);
+    }
+
+    // region 通过分数查询
+
+    /**
+     * 返回有序集合中的分数在start和end之间的所有成员（包括分数等于start或者end的成员）。
+     * 成员被认为是从低分到高分排序的。
+     * 具有相同分数的成员按字典序排列。
+     *
+     * @param start 起始分数 inclusive
+     * @param end   截止分数 inclusive
      * @return memberInfo
      */
-    public List<Member<K, S>> zrevrangeByScore(final S minScore, final S maxScore) {
-        return zrangeByScoreWithOptions(new ZScoreRangeSpec<>(minScore, maxScore), 0, -1, true);
+    public List<Member<K, S>> zrangeByScore(S start, S end) {
+        return zrangeByScoreWithOptions(zsl.newRangeSpec(start, end), 0, -1, false);
+    }
+
+    /**
+     * 返回有序集合中的分数在指定范围区间的所有成员。
+     * 成员被认为是从低分到高分排序的。
+     * 具有相同分数的成员按字典序排列。
+     *
+     * @param spec 范围描述信息
+     * @return memberInfo
+     */
+    public List<Member<K, S>> zrangeByScore(ScoreRangeSpec<S> spec) {
+        return zrangeByScoreWithOptions(zsl.newRangeSpec(spec), 0, -1, false);
+    }
+
+    /**
+     * 返回有序集合中的分数在start和end之间的所有成员（包括分数等于start或者end的成员）。
+     * 成员被认为是从高分到低分排序的。
+     * 具有相同score值的成员按字典序的反序排列。
+     *
+     * @param start 起始分数 inclusive
+     * @param end   截止分数 inclusive
+     * @return memberInfo
+     */
+    public List<Member<K, S>> zrevrangeByScore(final S start, final S end) {
+        return zrangeByScoreWithOptions(zsl.newRangeSpec(start, end), 0, -1, true);
+    }
+
+    /**
+     * 返回有序集合中的分数在指定范围之间的所有成员。
+     * 成员被认为是从高分到低分排序的。
+     * 具有相同score值的成员按字典序的反序排列。     *
+     *
+     * @param rangeSpec score范围区间
+     * @return 删除的成员数目
+     */
+    public List<Member<K, S>> zrevrangeByScore(ScoreRangeSpec<S> rangeSpec) {
+        return zrangeByScoreWithOptions(zsl.newRangeSpec(rangeSpec), 0, -1, true);
+    }
+
+    /**
+     * 返回zset中指定分数区间内的成员，并按照指定顺序返回
+     *
+     * @param rangeSpec score范围描述信息
+     * @param offset    偏移量(用于分页)  大于等于0
+     * @param limit     返回的成员数量(用于分页) 小于0表示不限制
+     * @param reverse   是否逆序
+     * @return memberInfo
+     */
+    public List<Member<K, S>> zrangeByScoreWithOptions(final ScoreRangeSpec<S> rangeSpec, int offset, int limit, boolean reverse) {
+        return zrangeByScoreWithOptions(zsl.newRangeSpec(rangeSpec), offset, limit, reverse);
     }
 
     /**
@@ -392,7 +502,7 @@ public class GenericZSet<K, S> {
      * @param reverse 是否逆序
      * @return memberInfo
      */
-    public List<Member<K, S>> zrangeByScoreWithOptions(final ZScoreRangeSpec<S> range, int offset, int limit, boolean reverse) {
+    private List<Member<K, S>> zrangeByScoreWithOptions(final ZScoreRangeSpec<S> range, int offset, int limit, boolean reverse) {
         if (offset < 0) {
             throw new IllegalArgumentException("offset" + ": " + offset + " (expected: >= 0)");
         }
@@ -446,6 +556,9 @@ public class GenericZSet<K, S> {
         }
         return result;
     }
+    // endregion
+
+    // region 通过排名查询
 
     /**
      * 查询指定排名区间的成员id和分数，结果排名由低到高。
@@ -513,40 +626,7 @@ public class GenericZSet<K, S> {
         }
         return result;
     }
-
-    /**
-     * 获取指定排名的成员数据。
-     * 元素被认为是从低分到高分排序的。
-     * 具有相同分数的元素按字典序排列。
-     *
-     * @param rank 排名 0-based
-     * @return memver，如果不存在，则返回null
-     */
-    public Member<K, S> zmemberByRank(int rank) {
-        if (rank < 0 || rank >= zsl.length()) {
-            return null;
-        }
-        final SkipListNode<K, S> node = zsl.zslGetElementByRank(rank + 1);
-        assert null != node;
-        return new Member<>(node.obj, node.score);
-    }
-
-    /**
-     * 获取指定逆序排名的成员数据。
-     * 元素被认为是从高分到低分排序的。
-     * 具有相同score值的成员按字典序的反序排列。
-     *
-     * @param rank 排名 0-based
-     * @return memver，如果不存在，则返回null
-     */
-    public Member<K, S> zrevmemberByRank(int rank) {
-        if (rank < 0 || rank >= zsl.length()) {
-            return null;
-        }
-        final SkipListNode<K, S> node = zsl.zslGetElementByRank(zsl.length() - rank);
-        assert null != node;
-        return new Member<>(node.obj, node.score);
-    }
+    // endregion
 
     // ------------------------------------------------------- 内部实现 ----------------------------------------
 
@@ -558,7 +638,7 @@ public class GenericZSet<K, S> {
      * @version 1.0
      * date - 2019/11/4
      */
-    public static class SkipList<K, S> {
+    private static class SkipList<K, S> {
 
         /**
          * 跳表允许最大层级
@@ -834,9 +914,8 @@ public class GenericZSet<K, S> {
          * @return true/false
          */
         private boolean isScoreRangeEmpty(ZScoreRangeSpec<S> range) {
-            // TODO 这里可能产生一些奇怪的语义
-            return compareScore(range.min, range.max) > 0 ||
-                    (scoreEquals(range.min, range.max) && (range.minex || range.maxex));
+            // 这里和redis有所区别，这里min一定小于等于max
+            return scoreEquals(range.min, range.max) && (range.minex || range.maxex);
         }
 
         /**
@@ -1175,6 +1254,38 @@ public class GenericZSet<K, S> {
         }
 
         /**
+         * @param start 起始分数
+         * @param end   截止分数
+         * @return spec
+         */
+        private ZScoreRangeSpec<S> newRangeSpec(S start, S end) {
+            return newRangeSpec(start, false, end, false);
+        }
+
+        /**
+         * @param rangeSpec 开放给用户的范围描述信息
+         * @return spec
+         */
+        private ZScoreRangeSpec<S> newRangeSpec(ScoreRangeSpec<S> rangeSpec) {
+            return newRangeSpec(rangeSpec.getStart(), rangeSpec.isStartEx(), rangeSpec.getEnd(), rangeSpec.isEndEx());
+        }
+
+        /**
+         * @param start   起始分数
+         * @param startEx 是否去除起始分数
+         * @param end     截止分数
+         * @param endEx   是否去除截止分数
+         * @return spec
+         */
+        private ZScoreRangeSpec<S> newRangeSpec(S start, boolean startEx, S end, boolean endEx) {
+            if (compareScore(start, end) <= 0) {
+                return new ZScoreRangeSpec<>(start, startEx, end, endEx);
+            } else {
+                return new ZScoreRangeSpec<>(end, endEx, start, startEx);
+            }
+        }
+
+        /**
          * 值是否大于等于下限
          *
          * @param value 要比较的score
@@ -1226,7 +1337,7 @@ public class GenericZSet<K, S> {
     /**
      * 跳表节点
      */
-    static class SkipListNode<K, S> {
+    private static class SkipListNode<K, S> {
         /**
          * 节点对应的数据id
          */
@@ -1258,7 +1369,7 @@ public class GenericZSet<K, S> {
     /**
      * 跳表层级
      */
-    static class SkipListLevel<K, S> {
+    private static class SkipListLevel<K, S> {
         /**
          * 每层对应1个后向指针 (后继节点)
          */
@@ -1268,6 +1379,37 @@ public class GenericZSet<K, S> {
          * 它表示当前的指针跨越了多少个节点。span用于计算成员排名(rank)，这是Redis对于SkipList做的一个扩展。
          */
         int span;
+    }
+
+    /**
+     * {@link GenericZSet}中“score”范围描述信息 - specification模式
+     */
+    private static class ZScoreRangeSpec<S> {
+        /**
+         * 最低分数
+         */
+        final S min;
+        /**
+         * 是否去除最低分
+         * exclusive
+         */
+        final boolean minex;
+        /**
+         * 最高分数
+         */
+        final S max;
+        /**
+         * 是否去除最高分
+         * exclusive
+         */
+        final boolean maxex;
+
+        ZScoreRangeSpec(S min, boolean minex, S max, boolean maxex) {
+            this.min = min;
+            this.minex = minex;
+            this.max = max;
+            this.maxex = maxex;
+        }
     }
 
     // - 测试用例
