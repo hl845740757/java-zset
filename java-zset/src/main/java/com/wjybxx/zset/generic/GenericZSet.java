@@ -159,7 +159,7 @@ public class GenericZSet<K, S> {
      * 为有序集的成员member的score值加上增量increment，并更新到正确的排序位置。
      * 如果有序集中不存在member，就在有序集中添加一个member，score是increment（就好像它之前的score是0）
      *
-     * @param increment 要增加的值
+     * @param increment 自定义增量
      * @param member    成员id
      * @return 新值
      */

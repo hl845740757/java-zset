@@ -63,8 +63,8 @@ public class ZSet<K> {
      */
     private final SkipList<K> zsl;
 
-    private ZSet(Comparator<K> keyComparator, ScoreComparator scoreComparator) {
-        this.zsl = new SkipList<>(keyComparator, scoreComparator);
+    private ZSet(Comparator<K> keyComparator, ScoreHandler scoreHandler) {
+        this.zsl = new SkipList<>(keyComparator, scoreHandler);
     }
 
     /**
@@ -84,44 +84,44 @@ public class ZSet<K> {
     /**
      * 创建一个键为string类型的zset
      *
-     * @param scoreComparator score比较器，默认实现见{@link ScoreComparators}
+     * @param scoreHandler score比较器，默认实现见{@link ScoreHandlers}
      * @return zset
      */
-    public static ZSet<String> newStringKeyZSet(ScoreComparator scoreComparator) {
-        return new ZSet<>(String::compareTo, scoreComparator);
+    public static ZSet<String> newStringKeyZSet(ScoreHandler scoreHandler) {
+        return new ZSet<>(String::compareTo, scoreHandler);
     }
 
     /**
      * 创建一个键为long类型的zset
      *
-     * @param scoreComparator score比较器，默认实现见{@link ScoreComparators}
+     * @param scoreHandler score比较器，默认实现见{@link ScoreHandlers}
      * @return zset
      */
-    public static ZSet<Long> newLongKeyZSet(ScoreComparator scoreComparator) {
-        return new ZSet<>(Long::compareTo, scoreComparator);
+    public static ZSet<Long> newLongKeyZSet(ScoreHandler scoreHandler) {
+        return new ZSet<>(Long::compareTo, scoreHandler);
     }
 
     /**
      * 创建一个键为int类型的zset
      *
-     * @param scoreComparator score比较器，默认实现见{@link ScoreComparators}
+     * @param scoreHandler score比较器，默认实现见{@link ScoreHandlers}
      * @return zset
      */
-    public static ZSet<Integer> newIntKeyZSet(ScoreComparator scoreComparator) {
-        return new ZSet<>(Integer::compareTo, scoreComparator);
+    public static ZSet<Integer> newIntKeyZSet(ScoreHandler scoreHandler) {
+        return new ZSet<>(Integer::compareTo, scoreHandler);
     }
 
     /**
      * 创建一个自定义键类型的zset
      *
-     * @param keyComparator   键值比较器，当score比较结果相等时，比较key。
-     *                        <b>请仔细阅读类文档中的注意事项</b>。
-     * @param scoreComparator score比较器，默认实现见{@link ScoreComparators}
-     * @param <K>             键的类型
+     * @param keyComparator 键值比较器，当score比较结果相等时，比较key。
+     *                      <b>请仔细阅读类文档中的注意事项</b>。
+     * @param scoreHandler  score比较器，默认实现见{@link ScoreHandlers}
+     * @param <K>           键的类型
      * @return zset
      */
-    public static <K> ZSet<K> newGenericKeyZSet(Comparator<K> keyComparator, ScoreComparator scoreComparator) {
-        return new ZSet<>(keyComparator, scoreComparator);
+    public static <K> ZSet<K> newGenericKeyZSet(Comparator<K> keyComparator, ScoreHandler scoreHandler) {
+        return new ZSet<>(keyComparator, scoreHandler);
     }
     // -------------------------------------------------------- insert -----------------------------------------------
 
@@ -148,13 +148,13 @@ public class ZSet<K> {
      * 为有序集的成员member的score值加上增量increment，并更新到正确的排序位置。
      * 如果不存在member，就在有序集中添加一个member，score是increment（就好像它之前的score是0）
      *
-     * @param increment 要增加的值
+     * @param increment 自定义增量
      * @param member    成员id
      * @return 新值
      */
     public long zincrby(long increment, @Nonnull K member) {
         final Long oldScore = dict.get(member);
-        final long score = oldScore == null ? increment : (increment + oldScore);
+        final long score = oldScore == null ? increment : zsl.sum(oldScore, increment);
         zadd(score, member);
         return score;
     }
@@ -651,7 +651,7 @@ public class ZSet<K> {
         /**
          * 分数比较器
          */
-        private final ScoreComparator scoreComparator;
+        private final ScoreHandler scoreHandler;
         /**
          * 跳表头结点 - 哨兵
          * 1. 可以简化判定逻辑
@@ -675,9 +675,9 @@ public class ZSet<K> {
          */
         private int level = 1;
 
-        SkipList(Comparator<K> objComparator, ScoreComparator scoreComparator) {
+        SkipList(Comparator<K> objComparator, ScoreHandler scoreHandler) {
             this.objComparator = objComparator;
-            this.scoreComparator = scoreComparator;
+            this.scoreHandler = scoreHandler;
             this.header = zslCreateNode(ZSKIPLIST_MAXLEVEL, 0, null);
         }
 
@@ -1208,6 +1208,12 @@ public class ZSet<K> {
             return level;
         }
 
+        /**
+         * 计算两个score的和
+         */
+        private long sum(long score1, long score2) {
+            return scoreHandler.sum(score1, score2);
+        }
 
         /**
          * @param start 起始分数
@@ -1283,7 +1289,7 @@ public class ZSet<K> {
          * @return 0表示相等
          */
         private int compareScore(long score1, long score2) {
-            return scoreComparator.compare(score1, score2);
+            return scoreHandler.compare(score1, score2);
         }
 
         /**
@@ -1404,7 +1410,7 @@ public class ZSet<K> {
     // - 测试用例
 
     public static void main(String[] args) {
-        final ZSet<Integer> zSet = ZSet.newIntKeyZSet(ScoreComparators.scoreComparator(false));
+        final ZSet<Integer> zSet = ZSet.newIntKeyZSet(ScoreHandlers.scoreComparator(true));
 
         // 插入100个数据，member编号就是1-100
         IntStream.rangeClosed(1, 100).forEach(member -> {

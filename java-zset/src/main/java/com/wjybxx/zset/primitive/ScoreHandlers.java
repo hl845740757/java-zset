@@ -23,9 +23,9 @@ package com.wjybxx.zset.primitive;
  * @version 1.0
  * date - 2019/11/7
  */
-public class ScoreComparators {
+public class ScoreHandlers {
 
-    private ScoreComparators() {
+    private ScoreHandlers() {
 
     }
 
@@ -35,33 +35,43 @@ public class ScoreComparators {
      * @param desc 是否降序
      * @return 分数比较器
      */
-    public static ScoreComparator scoreComparator(boolean desc) {
-        return desc ? DescScoreComparator.INSTANCE : AscScoreComparator.INSTANCE;
+    public static ScoreHandler scoreComparator(boolean desc) {
+        return desc ? DescScoreHandler.INSTANCE : AscScoreHandler.INSTANCE;
     }
 
     /**
      * 升序比较器
      */
-    private static class AscScoreComparator implements ScoreComparator {
+    private static class AscScoreHandler implements ScoreHandler {
 
-        private static AscScoreComparator INSTANCE = new AscScoreComparator();
+        private static AscScoreHandler INSTANCE = new AscScoreHandler();
 
         @Override
         public int compare(long score1, long score2) {
             return Long.compare(score1, score2);
+        }
+
+        @Override
+        public long sum(long oldScore, long increment) {
+            return oldScore + increment;
         }
     }
 
     /**
      * 降序比较器
      */
-    private static class DescScoreComparator implements ScoreComparator {
+    private static class DescScoreHandler implements ScoreHandler {
 
-        private static DescScoreComparator INSTANCE = new DescScoreComparator();
+        private static DescScoreHandler INSTANCE = new DescScoreHandler();
 
         @Override
         public int compare(long score1, long score2) {
             return Long.compare(score2, score1);
+        }
+
+        @Override
+        public long sum(long oldScore, long increment) {
+            return oldScore + increment;
         }
     }
 }

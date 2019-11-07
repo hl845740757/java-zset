@@ -21,11 +21,21 @@ package com.wjybxx.zset.primitive;
  * @version 1.0
  * date - 2019/11/7
  */
-public interface ScoreComparator {
+public interface ScoreHandler {
 
     /**
      * 比较两个分数的大小
      */
     int compare(long score1, long score2);
 
+    /**
+     * 计算两个score的和
+     * Q: 为什么需要这个方法？
+     * A: 当你的score是由多个部分组合而成的时候，那么你就需要它。
+     *
+     * @param oldScore  当前分数
+     * @param increment 自定义增量
+     * @return sum
+     */
+    long sum(long oldScore, long increment);
 }
