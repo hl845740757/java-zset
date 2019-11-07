@@ -25,7 +25,7 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.IntStream;
 
 /**
- * 泛型类型的sorted set - 参考redis的zset实现
+ * score为泛型类型的sorted set - 参考redis的zset实现
  * <b>成员和分数</b>
  * 有序集合里面的成员是不能重复的都是唯一的，但是，不同成员间有可能有相同的分数。
  * 当多个成员有相同的分数时，他们将是有序的字典（ordered lexicographically）（仍由分数作为第一排序条件，然后，相同分数的成员按照字典规则相对排序）。
@@ -35,6 +35,7 @@ import java.util.stream.IntStream;
  * 2. ZSET使用<b>键</b>的compare结果判断两个键是否相等，而不是equals方法，因此必须保证键不同时compare结果一定不为0。
  * 3. 又由于key需要存放于{@link HashMap}中，因此“相同”的key必须有相同的hashCode，且equals方法返回true。
  * <b>PS:key的关键属性最好是number或string</b>
+ *
  * 4. 请查看{@link ScoreHandler}中的注意事项。
  *
  * <p>e
@@ -86,7 +87,7 @@ public class GenericZSet<K, S> {
      * @param <S>          score类型
      * @return zset
      */
-    public static <S> GenericZSet<String, S> newStringZSet(ScoreHandler<S> scoreHandler) {
+    public static <S> GenericZSet<String, S> newStringKeyZSet(ScoreHandler<S> scoreHandler) {
         return new GenericZSet<>(String::compareTo, scoreHandler);
     }
 
@@ -97,12 +98,23 @@ public class GenericZSet<K, S> {
      * @param <S>          score类型
      * @return zset
      */
-    public static <S> GenericZSet<Long, S> newLongZSet(ScoreHandler<S> scoreHandler) {
+    public static <S> GenericZSet<Long, S> newLongKeyZSet(ScoreHandler<S> scoreHandler) {
         return new GenericZSet<>(Long::compareTo, scoreHandler);
     }
 
     /**
-     * 创建一个子类型类型的zset
+     * 创建一个键为int类型的zset
+     *
+     * @param scoreHandler 分数处理器
+     * @param <S>          score类型
+     * @return zset
+     */
+    public static <S> GenericZSet<Integer, S> newIntKeyZSet(ScoreHandler<S> scoreHandler) {
+        return new GenericZSet<>(Integer::compareTo, scoreHandler);
+    }
+
+    /**
+     * 创建一个自定义键类型的zset
      *
      * @param keyComparator 键值比较器，当score比较结果相等时，比较key。
      *                      <b>请仔细阅读类文档中的注意事项</b>。
@@ -111,7 +123,7 @@ public class GenericZSet<K, S> {
      * @param <S>           score的类型
      * @return zset
      */
-    public static <K, S> GenericZSet<K, S> newGenericZSet(Comparator<K> keyComparator, ScoreHandler<S> scoreHandler) {
+    public static <K, S> GenericZSet<K, S> newGenericKeyZSet(Comparator<K> keyComparator, ScoreHandler<S> scoreHandler) {
         return new GenericZSet<>(keyComparator, scoreHandler);
     }
     // -------------------------------------------------------- insert -----------------------------------------------
@@ -549,12 +561,12 @@ public class GenericZSet<K, S> {
     public static class SkipList<K, S> {
 
         /**
-         * 跳表允许最大层级 - redis允许64层级，我们使用32层
+         * 跳表允许最大层级
          */
         private static final int ZSKIPLIST_MAXLEVEL = 32;
 
         /**
-         * 跳表升层概率 - redis 64层时的p为0.25，我们使用0.5f
+         * 跳表升层概率
          */
         private static final float ZSKIPLIST_P = 0.5f;
 
@@ -600,8 +612,7 @@ public class GenericZSet<K, S> {
          * 这里假定成员已经不存在（直到调用方执行该方法）。
          * <p>
          * zslInsert a new node in the skiplist. Assumes the element does not already
-         * exist (up to the caller to enforce that). The skiplist takes ownership
-         * of the passed SDS string 'obj'.
+         * exist (up to the caller to enforce that).
          * <pre>
          *             header                    newNode
          *               _                                                 _
@@ -1262,7 +1273,7 @@ public class GenericZSet<K, S> {
     // - 测试用例
 
     public static void main(String[] args) {
-        final GenericZSet<String, Long> zSet = newStringZSet(ScoreHandlers.longScoreHandler());
+        final GenericZSet<String, Long> zSet = newStringKeyZSet(ScoreHandlers.longScoreHandler());
 
         // 插入100个数据，member编号就是1-100
         IntStream.rangeClosed(1, 100).forEach(member -> {

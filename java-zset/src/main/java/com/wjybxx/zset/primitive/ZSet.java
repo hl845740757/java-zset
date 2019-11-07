@@ -25,12 +25,16 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.IntStream;
 
 /**
- * 基本类型的sorted set - 参考redis的zset实现
+ * score固定为long类型的sorted set - 参考redis的zset实现
  * <b>成员和分数</b>
  * 有序集合里面的成员是不能重复的都是唯一的，但是，不同成员间有可能有相同的分数。
  * 当多个成员有相同的分数时，他们将是有序的字典（ordered lexicographically）（仍由分数作为第一排序条件，然后，相同分数的成员按照字典规则相对排序）。
  * <p>
- * <b>NOTE</b>：ZSET中的排名从0开始
+ * <b>NOTE</b>：
+ * 1. ZSET中的排名从0开始
+ * 2. ZSET使用<b>键</b>的compare结果判断两个键是否相等，而不是equals方法，因此必须保证键不同时compare结果一定不为0。
+ * 3. 又由于key需要存放于{@link HashMap}中，因此“相同”的key必须有相同的hashCode，且equals方法返回true。
+ * <b>PS:key的关键属性最好是number或string</b>
  *
  * <p>
  * 这里只实现了redis zset中的几个常用的接口，扩展不是太麻烦，可以自己根据需要实现。
@@ -40,19 +44,19 @@ import java.util.stream.IntStream;
  * date - 2019/11/4
  */
 @NotThreadSafe
-public class ZSet {
+public class ZSet<K> {
 
     /**
      * obj -> score
      */
-    private final Map<String, Long> dict = new HashMap<>(128);
+    private final Map<K, Long> dict = new HashMap<>(128);
     /**
      * scoreList
      */
-    private final SkipList zsl;
+    private final SkipList<K> zsl;
 
-    public ZSet() {
-        this.zsl = new SkipList();
+    private ZSet(Comparator<K> keyComparator) {
+        this.zsl = new SkipList<>(keyComparator);
     }
 
     /**
@@ -69,6 +73,44 @@ public class ZSet {
         return zsl.dump();
     }
 
+    /**
+     * 创建一个键为string类型的zset
+     *
+     * @return zset
+     */
+    public static ZSet<String> newStringKeyZSet() {
+        return new ZSet<>(String::compareTo);
+    }
+
+    /**
+     * 创建一个键为long类型的zset
+     *
+     * @return zset
+     */
+    public static ZSet<Long> newLongKeyZSet() {
+        return new ZSet<>(Long::compareTo);
+    }
+
+    /**
+     * 创建一个键为int类型的zset
+     *
+     * @return zset
+     */
+    public static ZSet<Integer> newIntKeyZSet() {
+        return new ZSet<>(Integer::compareTo);
+    }
+
+    /**
+     * 创建一个自定义键类型的zset
+     *
+     * @param keyComparator 键值比较器，当score比较结果相等时，比较key。
+     *                      <b>请仔细阅读类文档中的注意事项</b>。
+     * @param <K>           键的类型
+     * @return zset
+     */
+    public static <K> ZSet<K> newGenericKeyZSet(Comparator<K> keyComparator) {
+        return new ZSet<>(keyComparator);
+    }
     // -------------------------------------------------------- insert -----------------------------------------------
 
     /**
@@ -78,7 +120,7 @@ public class ZSet {
      * @param score  数据的评分
      * @param member 成员id
      */
-    public void zadd(final long score, @Nonnull final String member) {
+    public void zadd(final long score, @Nonnull final K member) {
         final Long oldScore = dict.put(member, score);
         if (oldScore != null) {
             // 这里小心，score是基本类型，因此oldScore会自动拆箱，因此可以 == 比较，否则不能 == 比较
@@ -99,7 +141,7 @@ public class ZSet {
      * @param member    成员id
      * @return 新值
      */
-    public long zincrby(long increment, @Nonnull String member) {
+    public long zincrby(long increment, @Nonnull K member) {
         final Long oldScore = dict.get(member);
         final long score = oldScore == null ? increment : (increment + oldScore);
         zadd(score, member);
@@ -114,7 +156,7 @@ public class ZSet {
      * @param member 成员id
      * @return 如果成员存在，则返回true，否则返回false
      */
-    public boolean zrem(@Nonnull String member) {
+    public boolean zrem(@Nonnull K member) {
         final Long oldScore = dict.remove(member);
         if (oldScore != null) {
             zsl.zslDelete(oldScore, member);
@@ -250,7 +292,7 @@ public class ZSet {
     /**
      * 返回有序集中成员member的排名。其中有序集成员按score值递增(从小到大)顺序排列。
      * 返回的排名从0开始(0-based)，也就是说，score值最小的成员排名为0。
-     * 使用{@link #zrevrank(String)}可以获得成员按score值递减(从大到小)排列的排名。
+     * 使用{@link #zrevrank(Object)}可以获得成员按score值递减(从大到小)排列的排名。
      * <p>
      * <b>Time complexity:</b> O(log(N))
      * <p>
@@ -259,7 +301,7 @@ public class ZSet {
      * @param member 成员id
      * @return 如果存在该成员，则返回该成员的排名，否则返回-1
      */
-    public int zrank(@Nonnull String member) {
+    public int zrank(@Nonnull K member) {
         final Long score = dict.get(member);
         if (score == null) {
             return -1;
@@ -271,7 +313,7 @@ public class ZSet {
     /**
      * 返回有序集中成员member的排名，其中有序集成员按score值从大到小排列。
      * 返回的排名从0开始(0-based)，也就是说，score值最大的成员排名为0。
-     * 使用{@link #zrank(String)}可以获得成员按score值递增(从小到大)排列的排名。
+     * 使用{@link #zrank(Object)}可以获得成员按score值递增(从小到大)排列的排名。
      * <p>
      * <b>Time complexity:</b> O(log(N))
      * <p>
@@ -280,7 +322,7 @@ public class ZSet {
      * @param member 成员id
      * @return 如果存在该成员，则返回该成员的排名，否则返回-1
      */
-    public int zrevrank(@Nonnull String member) {
+    public int zrevrank(@Nonnull K member) {
         final Long score = dict.get(member);
         if (score == null) {
             return -1;
@@ -296,7 +338,7 @@ public class ZSet {
      * @param member 成员id
      * @return score
      */
-    public Long zscore(@Nonnull String member) {
+    public Long zscore(@Nonnull K member) {
         return dict.get(member);
     }
 
@@ -309,7 +351,7 @@ public class ZSet {
      * @param maxScore 最高分数 inclusive
      * @return memberInfo
      */
-    public List<Member> zrangeByScore(long minScore, long maxScore) {
+    public List<Member<K>> zrangeByScore(long minScore, long maxScore) {
         return zrangeByScoreWithOptions(new ZScoreRangeSpec(minScore, maxScore), 0, -1, false);
     }
 
@@ -322,7 +364,7 @@ public class ZSet {
      * @param maxScore 最高分数 inclusive
      * @return memberInfo
      */
-    public List<Member> zrevrangeByScore(final long minScore, final long maxScore) {
+    public List<Member<K>> zrevrangeByScore(final long minScore, final long maxScore) {
         return zrangeByScoreWithOptions(new ZScoreRangeSpec(minScore, maxScore), 0, -1, true);
     }
 
@@ -335,12 +377,12 @@ public class ZSet {
      * @param reverse 是否逆序
      * @return memberInfo
      */
-    public List<Member> zrangeByScoreWithOptions(final ZScoreRangeSpec range, int offset, int limit, boolean reverse) {
+    public List<Member<K>> zrangeByScoreWithOptions(final ZScoreRangeSpec range, int offset, int limit, boolean reverse) {
         if (offset < 0) {
             throw new IllegalArgumentException("offset" + ": " + offset + " (expected: >= 0)");
         }
 
-        SkipListNode listNode;
+        SkipListNode<K> listNode;
         /* If reversed, get the last node in range as starting point. */
         if (reverse) {
             listNode = zsl.zslLastInRange(range);
@@ -363,7 +405,7 @@ public class ZSet {
             }
         }
 
-        final List<Member> result = new ArrayList<>();
+        final List<Member<K>> result = new ArrayList<>();
 
         /* 这里使用 != 0 判断，当limit小于0时，表示不限制 */
         while (listNode != null && limit-- != 0) {
@@ -378,7 +420,7 @@ public class ZSet {
                 }
             }
 
-            result.add(new Member(listNode.obj, listNode.score));
+            result.add(new Member<>(listNode.obj, listNode.score));
 
             /* Move to next node */
             if (reverse) {
@@ -400,7 +442,7 @@ public class ZSet {
      * @param end   截止排名 inclusive
      * @return memberInfo
      */
-    public List<Member> zrangeByRank(int start, int end) {
+    public List<Member<K>> zrangeByRank(int start, int end) {
         return zrangeByRankInternal(start, end, false);
     }
 
@@ -415,7 +457,7 @@ public class ZSet {
      * @param end   截止排名 inclusive
      * @return memberInfo
      */
-    public List<Member> zrevrangeByRank(int start, int end) {
+    public List<Member<K>> zrevrangeByRank(int start, int end) {
         return zrangeByRankInternal(start, end, true);
     }
 
@@ -427,7 +469,7 @@ public class ZSet {
      * @param reverse 是否逆序返回
      * @return 区间范围内的成员id和score
      */
-    private List<Member> zrangeByRankInternal(int start, int end, boolean reverse) {
+    private List<Member<K>> zrangeByRankInternal(int start, int end, boolean reverse) {
         final int zslLength = zsl.length();
 
         start = convertStartRank(start, zslLength);
@@ -438,7 +480,7 @@ public class ZSet {
         }
 
         int rangeLen = end - start + 1;
-        SkipListNode listNode;
+        SkipListNode<K> listNode;
 
         /* start >= 0，大于0表示需要进行调整 */
         /* Check if starting point is trivial, before doing log(N) lookup. */
@@ -448,9 +490,9 @@ public class ZSet {
             listNode = start > 0 ? zsl.zslGetElementByRank(start + 1) : zsl.header.levelInfo[0].forward;
         }
 
-        final List<Member> result = new ArrayList<>(rangeLen);
+        final List<Member<K>> result = new ArrayList<>(rangeLen);
         while (rangeLen-- > 0 && listNode != null) {
-            result.add(new Member(listNode.obj, listNode.score));
+            result.add(new Member<>(listNode.obj, listNode.score));
             listNode = reverse ? listNode.backward : listNode.levelInfo[0].forward;
         }
         return result;
@@ -464,13 +506,13 @@ public class ZSet {
      * @param rank 排名 0-based
      * @return memver，如果不存在，则返回null
      */
-    public Member zmemberByRank(int rank) {
+    public Member<K> zmemberByRank(int rank) {
         if (rank < 0 || rank >= zsl.length()) {
             return null;
         }
-        final SkipListNode node = zsl.zslGetElementByRank(rank + 1);
+        final SkipListNode<K> node = zsl.zslGetElementByRank(rank + 1);
         assert null != node;
-        return new Member(node.obj, node.score);
+        return new Member<>(node.obj, node.score);
     }
 
     /**
@@ -481,13 +523,13 @@ public class ZSet {
      * @param rank 排名 0-based
      * @return memver，如果不存在，则返回null
      */
-    public Member zrevmemberByRank(int rank) {
+    public Member<K> zrevmemberByRank(int rank) {
         if (rank < 0 || rank >= zsl.length()) {
             return null;
         }
-        final SkipListNode node = zsl.zslGetElementByRank(zsl.length() - rank);
+        final SkipListNode<K> node = zsl.zslGetElementByRank(zsl.length() - rank);
         assert null != node;
-        return new Member(node.obj, node.score);
+        return new Member<>(node.obj, node.score);
     }
     // ------------------------------------------------------- 内部实现 ----------------------------------------
 
@@ -499,15 +541,15 @@ public class ZSet {
      * @version 1.0
      * date - 2019/11/4
      */
-    public static class SkipList {
+    public static class SkipList<K> {
 
         /**
-         * 跳表允许最大层级 - redis允许64层级，我们使用32层
+         * 跳表允许最大层级
          */
         private static final int ZSKIPLIST_MAXLEVEL = 32;
 
         /**
-         * 跳表升层概率 - redis 64层时的p为0.25，我们使用0.5f
+         * 跳表升层概率
          */
         private static final float ZSKIPLIST_P = 0.5f;
 
@@ -517,16 +559,20 @@ public class ZSet {
          */
         private final Random random = new Random();
         /**
+         * 键比较器
+         */
+        private final Comparator<K> objComparator;
+        /**
          * 跳表头结点 - 哨兵
          * 1. 可以简化判定逻辑
          * 2. 恰好可以使得rank从1开始
          */
-        private final SkipListNode header;
+        private final SkipListNode<K> header;
 
         /**
          * 跳表尾节点
          */
-        private SkipListNode tail;
+        private SkipListNode<K> tail;
 
         /**
          * 跳表成员个数
@@ -539,7 +585,8 @@ public class ZSet {
          */
         private int level = 1;
 
-        SkipList() {
+        SkipList(Comparator<K> objComparator) {
+            this.objComparator = objComparator;
             this.header = zslCreateNode(ZSKIPLIST_MAXLEVEL, 0, null);
         }
 
@@ -548,8 +595,7 @@ public class ZSet {
          * 这里假定成员已经不存在（直到调用方执行该方法）。
          * <p>
          * zslInsert a new node in the skiplist. Assumes the element does not already
-         * exist (up to the caller to enforce that). The skiplist takes ownership
-         * of the passed SDS string 'obj'.
+         * exist (up to the caller to enforce that).
          * <pre>
          *             header                    newNode
          *               _                                                 _
@@ -567,7 +613,7 @@ public class ZSet {
          * @param obj   obj 分数对应的成员id
          */
         @SuppressWarnings("UnusedReturnValue")
-        SkipListNode zslInsert(long score, String obj) {
+        SkipListNode zslInsert(long score, K obj) {
             // 新节点的level
             final int level = zslRandomLevel();
 
@@ -577,11 +623,11 @@ public class ZSet {
             // rank - 新节点各层前驱的当前排名
             // 这里不必创建一个ZSKIPLIST_MAXLEVEL长度的数组，它取决于插入节点后的新高度，你在别处看见的代码会造成大量的空间浪费，增加GC压力。
             // 如果创建的都是ZSKIPLIST_MAXLEVEL长度的数组，那么应该实现缓存
-            final SkipListNode[] update = new SkipListNode[Math.max(level, this.level)];
+            @SuppressWarnings("unchecked") final SkipListNode<K>[] update = new SkipListNode[Math.max(level, this.level)];
             final int[] rank = new int[update.length];
 
             // preNode - 新插入节点的前驱节点
-            SkipListNode preNode = header;
+            SkipListNode<K> preNode = header;
             for (int i = this.level - 1; i >= 0; i--) {
                 /* store rank that is crossed to reach the insert position */
                 if (i == (this.level - 1)) {
@@ -619,7 +665,7 @@ public class ZSet {
              * scores, and the re-insertion of score and redis object should never
              * happen since the caller of zslInsert() should test in the hash table
              * if the element is already inside or not.*/
-            final SkipListNode newNode = zslCreateNode(level, score, obj);
+            final SkipListNode<K> newNode = zslCreateNode(level, score, obj);
 
             /* 这些节点的高度小于等于新插入的节点的高度，需要更新指针。此外它们当前的跨度被拆分了两部分，需要重新计算。 */
             for (int i = 0; i < level; i++) {
@@ -661,13 +707,13 @@ public class ZSet {
          * @param obj   用于确定节点是否是对应的数据节点
          */
         @SuppressWarnings("UnusedReturnValue")
-        boolean zslDelete(long score, String obj) {
+        boolean zslDelete(long score, K obj) {
             // update - 需要更新后继节点的Node
             // 1. 分数小的节点
             // 2. 分数相同但id小的节点（分数相同时根据数据排序）
             final SkipListNode[] update = new SkipListNode[this.level];
 
-            SkipListNode preNode = this.header;
+            SkipListNode<K> preNode = this.header;
             for (int i = this.level - 1; i >= 0; i--) {
                 while (preNode.levelInfo[i].forward != null &&
                         compareScoreAndObj(preNode.levelInfo[i].forward, score, obj) < 0) {
@@ -681,7 +727,7 @@ public class ZSet {
             /* 由于可能多个节点拥有相同的分数，因此必须同时比较score和object */
             /* We may have multiple elements with the same score, what we need
              * is to find the element with both the right score and object. */
-            final SkipListNode targetNode = preNode.levelInfo[0].forward;
+            final SkipListNode<K> targetNode = preNode.levelInfo[0].forward;
             if (targetNode != null && score == targetNode.score && objEquals(targetNode.obj, obj)) {
                 zslDeleteNode(targetNode, update);
                 return true;
@@ -697,7 +743,7 @@ public class ZSet {
          * @param deleteNode 要删除的节点
          * @param update     可能要更新的节点们
          */
-        private void zslDeleteNode(final SkipListNode deleteNode, final SkipListNode[] update) {
+        private void zslDeleteNode(final SkipListNode<K> deleteNode, final SkipListNode[] update) {
             for (int i = 0; i < this.level; i++) {
                 if (update[i].levelInfo[i].forward == deleteNode) {
                     // 这些节点的高度小于等于要删除的节点，需要合并两个跨度
@@ -809,14 +855,14 @@ public class ZSet {
          * @return 不存在返回null
          */
         @Nullable
-        SkipListNode zslFirstInRange(ZScoreRangeSpec range) {
+        SkipListNode<K> zslFirstInRange(ZScoreRangeSpec range) {
             /* zset数据范围与指定范围没有交集，可提前返回，减少不必要的遍历 */
             /* If everything is out of range, return early. */
             if (!zslIsInRange(range)) {
                 return null;
             }
 
-            SkipListNode lastNodeLtMin = this.header;
+            SkipListNode<K> lastNodeLtMin = this.header;
             for (int i = this.level - 1; i >= 0; i--) {
                 /* 前进直到出现后继节点大于等于指定最小值的节点 */
                 /* Go forward while *OUT* of range. */
@@ -829,7 +875,7 @@ public class ZSet {
 
             /* 这里的上下文表明了，一定存在一个节点的值大于等于指定范围的最小值，因此下一个节点一定不为null */
             /* This is an inner range, so the next node cannot be NULL. */
-            final SkipListNode firstNodeGteMin = lastNodeLtMin.levelInfo[0].forward;
+            final SkipListNode<K> firstNodeGteMin = lastNodeLtMin.levelInfo[0].forward;
             assert firstNodeGteMin != null;
 
             /* 如果该节点的数据大于max，则不存在再范围内的节点 */
@@ -850,14 +896,14 @@ public class ZSet {
          * @return 不存在返回null
          */
         @Nullable
-        SkipListNode zslLastInRange(ZScoreRangeSpec range) {
+        SkipListNode<K> zslLastInRange(ZScoreRangeSpec range) {
             /* zset数据范围与指定范围没有交集，可提前返回，减少不必要的遍历 */
             /* If everything is out of range, return early. */
             if (!zslIsInRange(range)) {
                 return null;
             }
 
-            SkipListNode lastNodeLteMax = this.header;
+            SkipListNode<K> lastNodeLteMax = this.header;
             for (int i = this.level - 1; i >= 0; i--) {
                 /* Go forward while *IN* range. */
                 while (lastNodeLteMax.levelInfo[i].forward != null &&
@@ -892,11 +938,11 @@ public class ZSet {
          * @param dict  对象id到score的映射
          * @return 删除的节点数量
          */
-        int zslDeleteRangeByScore(ZScoreRangeSpec range, Map<String, Long> dict) {
+        int zslDeleteRangeByScore(ZScoreRangeSpec range, Map<K, Long> dict) {
             final SkipListNode[] update = new SkipListNode[this.level];
             int removed = 0;
 
-            SkipListNode lastNodeLtMin = this.header;
+            SkipListNode<K> lastNodeLtMin = this.header;
             for (int i = this.level - 1; i >= 0; i--) {
                 while (lastNodeLtMin.levelInfo[i].forward != null &&
                         !zslValueGteMin(lastNodeLtMin.levelInfo[i].forward.score, range)) {
@@ -907,13 +953,13 @@ public class ZSet {
 
             /* 当前节点是小于目标范围最小值的最后一个节点，它的下一个节点可能为null，或大于等于最小值 */
             /* Current node is the last with score < or <= min. */
-            SkipListNode firstNodeGteMin = lastNodeLtMin.levelInfo[0].forward;
+            SkipListNode<K> firstNodeGteMin = lastNodeLtMin.levelInfo[0].forward;
 
             /* 删除在范围内的节点(小于等于最大值的节点) */
             /* Delete nodes while in range. */
             while (firstNodeGteMin != null
                     && zslValueLteMax(firstNodeGteMin.score, range)) {
-                final SkipListNode next = firstNodeGteMin.levelInfo[0].forward;
+                final SkipListNode<K> next = firstNodeGteMin.levelInfo[0].forward;
                 zslDeleteNode(firstNodeGteMin, update);
                 dict.remove(firstNodeGteMin.obj);
                 removed++;
@@ -934,13 +980,13 @@ public class ZSet {
          * @param dict  member -> score的字典
          * @return 删除的成员数量
          */
-        int zslDeleteRangeByRank(int start, int end, Map<String, Long> dict) {
+        int zslDeleteRangeByRank(int start, int end, Map<K, Long> dict) {
             final SkipListNode[] update = new SkipListNode[this.level];
             /* 已遍历的真实成员数量，表示成员的真实排名 */
             int traversed = 0;
             int removed = 0;
 
-            SkipListNode lastNodeLtStart = this.header;
+            SkipListNode<K> lastNodeLtStart = this.header;
             for (int i = this.level - 1; i >= 0; i--) {
                 while (lastNodeLtStart.levelInfo[i].forward != null &&
                         (traversed + lastNodeLtStart.levelInfo[i].span) < start) {
@@ -954,9 +1000,9 @@ public class ZSet {
 
             traversed++;
 
-            SkipListNode firstNodeGteStart = lastNodeLtStart.levelInfo[0].forward;
+            SkipListNode<K> firstNodeGteStart = lastNodeLtStart.levelInfo[0].forward;
             while (firstNodeGteStart != null && traversed <= end) {
-                final SkipListNode next = firstNodeGteStart.levelInfo[0].forward;
+                final SkipListNode<K> next = firstNodeGteStart.levelInfo[0].forward;
                 zslDeleteNode(firstNodeGteStart, update);
                 dict.remove(firstNodeGteStart.obj);
                 removed++;
@@ -980,9 +1026,9 @@ public class ZSet {
          * @param obj   节点对应的数据id
          * @return 排名，从1开始
          */
-        int zslGetRank(long score, @Nonnull String obj) {
+        int zslGetRank(long score, @Nonnull K obj) {
             int rank = 0;
-            SkipListNode firstNodeGteScore = this.header;
+            SkipListNode<K> firstNodeGteScore = this.header;
             for (int i = this.level - 1; i >= 0; i--) {
                 while (firstNodeGteScore.levelInfo[i].forward != null &&
                         compareScoreAndObj(firstNodeGteScore.levelInfo[i].forward, score, obj) <= 0) {
@@ -1010,9 +1056,9 @@ public class ZSet {
          * @return element
          */
         @Nullable
-        SkipListNode zslGetElementByRank(int rank) {
+        SkipListNode<K> zslGetElementByRank(int rank) {
             int traversed = 0;
-            SkipListNode firstNodeGteRank = this.header;
+            SkipListNode<K> firstNodeGteRank = this.header;
             for (int i = this.level - 1; i >= 0; i--) {
                 while (firstNodeGteRank.levelInfo[i].forward != null
                         && (traversed + firstNodeGteRank.levelInfo[i].span) <= rank) {
@@ -1044,10 +1090,10 @@ public class ZSet {
          * @param obj   成员id
          * @return node
          */
-        private static SkipListNode zslCreateNode(int level, long score, String obj) {
-            final SkipListNode node = new SkipListNode(obj, score, new SkipListLevel[level]);
+        private static <K> SkipListNode<K> zslCreateNode(int level, long score, K obj) {
+            final SkipListNode<K> node = new SkipListNode<>(obj, score, new SkipListLevel[level]);
             for (int index = 0; index < level; index++) {
-                node.levelInfo[index] = new SkipListLevel();
+                node.levelInfo[index] = new SkipListLevel<K>();
             }
             return node;
         }
@@ -1080,7 +1126,7 @@ public class ZSet {
          * @param obj     成员的键
          * @return 0 表示equals
          */
-        private static int compareScoreAndObj(SkipListNode forward, long score, String obj) {
+        private int compareScoreAndObj(SkipListNode<K> forward, long score, K obj) {
             if (forward.score == score) {
                 return compareObj(forward.obj, obj);
             }
@@ -1091,8 +1137,8 @@ public class ZSet {
          * 比较两个成员的key，<b>必须保证当且仅当两个键相等的时候返回0</b>
          * 字符串带有这样的特性。
          */
-        private static int compareObj(@Nonnull String objA, @Nonnull String objB) {
-            return objA.compareTo(objB);
+        private int compareObj(@Nonnull K objA, @Nonnull K objB) {
+            return objComparator.compare(objA, objB);
         }
 
         /**
@@ -1102,7 +1148,7 @@ public class ZSet {
          * @return true/false
          * @apiNote 使用compare == 0判断相等
          */
-        private static boolean objEquals(String objA, String objB) {
+        private boolean objEquals(K objA, K objB) {
             // 不使用equals，而是使用compare
             return compareObj(objA, objB) == 0;
         }
@@ -1137,11 +1183,11 @@ public class ZSet {
     /**
      * 跳表节点
      */
-    static class SkipListNode {
+    static class SkipListNode<K> {
         /**
          * 节点对应的数据id
          */
-        final String obj;
+        final K obj;
         /**
          * 该节点数据对应的评分 - 如果要通用的话，这里将来将是一个泛型对象，需要实现{@link Comparable}。
          */
@@ -1150,17 +1196,18 @@ public class ZSet {
          * 该节点的层级信息
          * level[]存放指向各层链表后一个节点的指针（后向指针）。
          */
-        final SkipListLevel[] levelInfo;
+        final SkipListLevel<K>[] levelInfo;
         /**
          * 该节点的前向指针
          * backward字段是指向链表前一个节点的指针（前向指针）。
          * 节点只有1个前向指针，所以只有第1层链表是一个双向链表。
          */
-        SkipListNode backward;
+        SkipListNode<K> backward;
 
-        private SkipListNode(String obj, long score, SkipListLevel[] levelInfo) {
+        private SkipListNode(K obj, long score, SkipListLevel[] levelInfo) {
             this.obj = obj;
             this.score = score;
+            // noinspection unchecked
             this.levelInfo = levelInfo;
         }
     }
@@ -1168,11 +1215,11 @@ public class ZSet {
     /**
      * 跳表层级
      */
-    static class SkipListLevel {
+    static class SkipListLevel<K> {
         /**
          * 每层对应1个后向指针 (后继节点)
          */
-        SkipListNode forward;
+        SkipListNode<K> forward;
         /**
          * 到后继节点之间的跨度
          * 它表示当前的指针跨越了多少个节点。span用于计算成员排名(rank)，这是Redis对于SkipList做的一个扩展。
@@ -1180,80 +1227,20 @@ public class ZSet {
         int span;
     }
 
-    /**
-     * {@link ZSet}中“score”范围描述信息 - specification模式
-     */
-    public static class ZScoreRangeSpec {
-        /**
-         * 最低分数
-         */
-        final long min;
-        /**
-         * 最高分数
-         */
-        final long max;
-        /**
-         * 是否去除下限
-         * exclusive
-         */
-        final boolean minex;
-        /**
-         * 是否去除上限
-         * exclusive
-         */
-        final boolean maxex;
-
-        public ZScoreRangeSpec(long min, long max) {
-            this.min = min;
-            this.max = max;
-            this.minex = false;
-            this.maxex = false;
-        }
-
-        public ZScoreRangeSpec(long min, long max, boolean minex, boolean maxex) {
-            this.min = min;
-            this.max = max;
-            this.minex = minex;
-            this.maxex = maxex;
-        }
-    }
-
-    /**
-     * zset中单个成员信息
-     */
-    public static class Member {
-
-        private final String member;
-        private final long score;
-
-        Member(String member, long score) {
-            this.member = member;
-            this.score = score;
-        }
-
-        public String getMember() {
-            return member;
-        }
-
-        public long getScore() {
-            return score;
-        }
-    }
-
     // - 测试用例
 
     public static void main(String[] args) {
-        final ZSet zSet = new ZSet();
+        final ZSet<Integer> zSet = ZSet.newIntKeyZSet();
 
         // 插入100个数据，member编号就是1-100
         IntStream.rangeClosed(1, 100).forEach(member -> {
             // 使用nextInt避免越界，导致一些奇怪的值
-            zSet.zadd(ThreadLocalRandom.current().nextInt(0, 10000), Integer.toString(member));
+            zSet.zadd(ThreadLocalRandom.current().nextInt(0, 10000), member);
         });
 
         // 重新插入
         IntStream.rangeClosed(1, 100).forEach(member -> {
-            zSet.zincrby(ThreadLocalRandom.current().nextInt(0, 10000), Integer.toString(member));
+            zSet.zincrby(ThreadLocalRandom.current().nextInt(0, 10000), member);
         });
 
         System.out.println("------------------------- dump ----------------------");
