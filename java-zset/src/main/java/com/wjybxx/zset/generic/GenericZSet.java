@@ -645,7 +645,7 @@ public class GenericZSet<K, S> {
         /**
          * 跳表升层概率
          */
-        private static final float ZSKIPLIST_P = 0.5f;
+        private static final float ZSKIPLIST_P = 0.25f;
 
         /**
          * {@link Random}本身是线程安全的，但是多线程使用会产生不必要的竞争，因此创建一个独立的random对象。
