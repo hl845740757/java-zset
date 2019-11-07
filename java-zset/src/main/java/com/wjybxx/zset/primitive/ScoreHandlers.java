@@ -30,12 +30,20 @@ public class ScoreHandlers {
     }
 
     /**
+     * @return Long类型的score处理器
+     */
+    public static ScoreHandler scoreHandler() {
+        return scoreHandler(false);
+    }
+
+
+    /**
      * 获取一个分数比较器
      *
      * @param desc 是否降序
      * @return 分数比较器
      */
-    public static ScoreHandler scoreComparator(boolean desc) {
+    public static ScoreHandler scoreHandler(boolean desc) {
         return desc ? DescScoreHandler.INSTANCE : AscScoreHandler.INSTANCE;
     }
 

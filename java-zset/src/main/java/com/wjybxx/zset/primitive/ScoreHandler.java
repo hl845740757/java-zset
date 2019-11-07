@@ -17,6 +17,8 @@
 package com.wjybxx.zset.primitive;
 
 /**
+ * long类型的score处理器
+ *
  * @author wjybxx
  * @version 1.0
  * date - 2019/11/7
@@ -25,6 +27,8 @@ public interface ScoreHandler {
 
     /**
      * 比较两个分数的大小
+     * Q: 为什么需要这个方法？
+     * A: 想实现实现逆序 或 当你的score是由多个部分组合而成的时候，那么你就需要它。
      */
     int compare(long score1, long score2);
 

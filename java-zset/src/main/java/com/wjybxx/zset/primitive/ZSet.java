@@ -26,13 +26,14 @@ import java.util.stream.IntStream;
 
 /**
  * score固定为long类型的sorted set - 参考redis的zset实现
- * <b>成员和分数</b>
- * 有序集合里面的成员是不能重复的都是唯一的，但是，不同成员间有可能有相同的分数。
- * 当多个成员有相同的分数时，他们将是有序的字典（ordered lexicographically）（仍由分数作为第一排序条件，然后，相同分数的成员按照字典规则相对排序）。
+ * <b>排序规则</b>
+ * 有序集合里面的成员是不能重复的，都是唯一的，但是，不同成员间有可能有相同的分数。
+ * 当多个成员有相同的分数时，它们将按照键排序。
+ * 即：分数作为第一排序条件，键作为第二排序条件，当分数相同时，比较键的大小。
  * <p>
  * <b>NOTE</b>：
- * 1. ZSET中的排名从0开始
- * 2. ZSET使用<b>键</b>的compare结果判断两个键是否相等，而不是equals方法，因此必须保证键不同时compare结果一定不为0。
+ * 1. ZSET中的排名从0开始（提供给用户的接口，排名都从0开始）
+ * 2. ZSET使用键的<b>compare</b>结果判断两个键是否相等，而不是equals方法，因此必须保证键不同时compare结果一定不为0。
  * 3. 又由于key需要存放于{@link HashMap}中，因此“相同”的key必须有相同的hashCode，且equals方法返回true。
  * <b>手动加粗:key的关键属性最好是number或string</b>
  * <p>
@@ -127,7 +128,7 @@ public class ZSet<K> {
 
     /**
      * 往有序集合中新增一个成员。
-     * 如果指定添加的成员已经是有序集合里面的成员，则会更新改成员的分数（scrore）并更新到正确的排序位置。
+     * 如果指定添加的成员已经是有序集合里面的成员，则会更新成员的分数（score）并更新到正确的排序位置。
      *
      * @param score  数据的评分
      * @param member 成员id
@@ -142,6 +143,22 @@ public class ZSet<K> {
         } else {
             zsl.zslInsert(score, member);
         }
+    }
+
+    /**
+     * 往有序集合中新增一个成员。当且仅当该成员不在有序集合时才添加。
+     *
+     * @param score  数据的评分
+     * @param member 成员id
+     * @return 添加成功则返回true，否则返回false。
+     */
+    public boolean zaddnx(final long score, @Nonnull final K member) {
+        final Long oldScore =  dict.putIfAbsent(member, score);
+        if (oldScore == null) {
+            zsl.zslInsert(score, member);
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -1450,7 +1467,7 @@ public class ZSet<K> {
     // - 测试用例
 
     public static void main(String[] args) {
-        final ZSet<Integer> zSet = ZSet.newIntKeyZSet(ScoreHandlers.scoreComparator(true));
+        final ZSet<Integer> zSet = ZSet.newIntKeyZSet(ScoreHandlers.scoreHandler(true));
 
         // 插入数据
         IntStream.rangeClosed(1, 10000).forEach(member -> {
