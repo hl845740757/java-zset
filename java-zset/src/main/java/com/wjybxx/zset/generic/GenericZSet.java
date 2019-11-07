@@ -190,15 +190,15 @@ public class GenericZSet<K, S> {
      * 删除指定成员
      *
      * @param member 成员id
-     * @return 如果成员存在，则返回true，否则返回false
+     * @return 如果成员存在，则返回对应的score，否则返回null。
      */
-    public boolean zrem(@Nonnull K member) {
+    public S zrem(@Nonnull K member) {
         final S oldScore = dict.remove(member);
         if (oldScore != null) {
             zsl.zslDelete(oldScore, member);
-            return true;
+            return oldScore;
         } else {
-            return false;
+            return null;
         }
     }
 
@@ -242,10 +242,37 @@ public class GenericZSet<K, S> {
      * 删除指定排名的成员
      *
      * @param rank 排名 0-based
-     * @return 删除成功则返回true，否则返回false
+     * @return 删除成功则返回该排名对应的数据，否则返回null
      */
-    public boolean zremByRank(int rank) {
-        return zremrangeByRank(rank, rank) > 0;
+    public Member<K, S> zremByRank(int rank) {
+        if (rank < 0 || rank >= zsl.length()) {
+            return null;
+        }
+        final SkipListNode<K, S> delete = zsl.zslDeleteByRank(rank + 1, dict);
+        assert null != delete;
+        return new Member<>(delete.obj, delete.score);
+    }
+
+    /**
+     * 删除并返回有序集合中的第一个成员。
+     * - 不使用min和max，是因为score的比较方式是用户自定义的。
+     *
+     * @return 如果不存在，则返回null
+     */
+    @Nullable
+    public Member<K, S> zpopFisrt() {
+        return zremByRank(0);
+    }
+
+    /**
+     * 删除并返回有序集合中的最后一个成员。
+     * - 不使用min和max，是因为score的比较方式是用户自定义的。
+     *
+     * @return 如果不存在，则返回null
+     */
+    @Nullable
+    public Member<K, S> zpopLast() {
+        return zremByRank(zsl.length() - 1);
     }
 
     /**
@@ -1123,7 +1150,6 @@ public class GenericZSet<K, S> {
                 while (lastNodeLtStart.levelInfo[i].forward != null &&
                         (traversed + lastNodeLtStart.levelInfo[i].span) < start) {
                     // 下一个节点的排名还未到范围内，继续前进
-                    // 更新已遍历的成员数量
                     traversed += lastNodeLtStart.levelInfo[i].span;
                     lastNodeLtStart = lastNodeLtStart.levelInfo[i].forward;
                 }
@@ -1132,6 +1158,7 @@ public class GenericZSet<K, S> {
 
             traversed++;
 
+            /* levelInfo[0] 最下面一层就是要删除节点的直接前驱 */
             SkipListNode<K, S> firstNodeGteStart = lastNodeLtStart.levelInfo[0].forward;
             while (firstNodeGteStart != null && traversed <= end) {
                 final SkipListNode<K, S> next = firstNodeGteStart.levelInfo[0].forward;
@@ -1142,6 +1169,40 @@ public class GenericZSet<K, S> {
                 firstNodeGteStart = next;
             }
             return removed;
+        }
+
+        /**
+         * 删除指定排名的成员 - 批量删除比单个删除更快捷
+         * (该方法非原生方法)
+         *
+         * @param rank 排名 1-based
+         * @param dict member -> score的字典
+         * @return 删除的节点
+         */
+        SkipListNode<K, S> zslDeleteByRank(int rank, Map<K, S> dict) {
+            final SkipListNode[] update = new SkipListNode[this.level];
+            int traversed = 0;
+
+            SkipListNode<K, S> lastNodeLtStart = this.header;
+            for (int i = this.level - 1; i >= 0; i--) {
+                while (lastNodeLtStart.levelInfo[i].forward != null &&
+                        (traversed + lastNodeLtStart.levelInfo[i].span) < rank) {
+                    // 下一个节点的排名还未到范围内，继续前进
+                    traversed += lastNodeLtStart.levelInfo[i].span;
+                    lastNodeLtStart = lastNodeLtStart.levelInfo[i].forward;
+                }
+                update[i] = lastNodeLtStart;
+            }
+
+            /* levelInfo[0] 最下面一层就是要删除节点的直接前驱 */
+            final SkipListNode<K, S> targetRankNode = lastNodeLtStart.levelInfo[0].forward;
+            if (null != targetRankNode) {
+                zslDeleteNode(targetRankNode, update);
+                dict.remove(targetRankNode.obj);
+                return targetRankNode;
+            } else {
+                return null;
+            }
         }
 
         /**
