@@ -36,4 +36,12 @@ public class Member<K, S> {
     public S getScore() {
         return score;
     }
+
+    @Override
+    public String toString() {
+        return "{" +
+                "member=" + member +
+                ", score=" + score +
+                '}';
+    }
 }

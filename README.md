@@ -1,6 +1,6 @@
 # java-zset
-redis的zset的java实现，包含两个版本，一个基本类型的实现，一个泛型的实现。  
-不过不会实现redis zset中的所有命令，仅仅实现了一些简单的接口。扩展zset较为容易，你可以在理解后自行添加需要的特性。
+redis的zset的java实现，包含两个版本，一个long类型score的实现，一个泛型score的实现。两种zset除了score的区别以外，没有别的区别。  
+java-zset实现了redis zset中的常用命令。此外，扩展zset较为容易，你可以在理解后自行添加需要的特性。
 
 #### 主要参考
  * [lua 版zset实现](https://github.com/XanthusL/zset)

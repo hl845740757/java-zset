@@ -53,7 +53,8 @@ import java.util.stream.IntStream;
  * date - 2019/11/4
  */
 @NotThreadSafe
-public class ZSet<K> {
+public class ZSet<K> implements Iterable<Member<K>> {
+
 
     /**
      * obj -> score
@@ -708,6 +709,44 @@ public class ZSet<K> {
         return count;
     }
     // endregion
+
+    // region 迭代
+
+    /**
+     * 迭代有序集中的所有元素
+     *
+     * @return iterator
+     */
+    @Nonnull
+    public Iterator<Member<K>> zscan() {
+        return zscan(0);
+    }
+
+    /**
+     * 从指定偏移量开始迭代有序集中的元素
+     *
+     * @param offset 偏移量，如果小于等于0，则等价于{@link #zscan()}
+     * @return iterator
+     */
+    @Nonnull
+    public Iterator<Member<K>> zscan(int offset) {
+        if (offset <= 0) {
+            return new ZSetItr(zsl.header.directForward());
+        }
+
+        if (offset >= zsl.length()) {
+            return new ZSetItr(null);
+        }
+
+        return new ZSetItr(zsl.zslGetElementByRank(offset + 1));
+    }
+
+    @Nonnull
+    @Override
+    public Iterator<Member<K>> iterator() {
+        return zscan(0);
+    }
+    // endregion
     // ------------------------------------------------------- 内部实现 ----------------------------------------
 
     /**
@@ -738,6 +777,11 @@ public class ZSet<K> {
 
         private final Comparator<K> objComparator;
         private final ScoreHandler scoreHandler;
+        /**
+         * 修改次数 - 防止错误的迭代
+         */
+        private int modCount = 0;
+
         /**
          * 跳表头结点 - 哨兵
          * 1. 可以简化判定逻辑
@@ -863,7 +907,7 @@ public class ZSet<K> {
                 update[i].levelInfo[i].span++;
             }
 
-            /* 设置新节点的前向节点(回溯节点) */
+            /* 设置新节点的前向节点(回溯节点) - 这里不包含header，一定注意 */
             newNode.backward = (update[0] == this.header) ? null : update[0];
 
             /* 设置新节点的后向节点 */
@@ -874,6 +918,7 @@ public class ZSet<K> {
             }
 
             this.length++;
+            this.modCount++;
             return newNode;
         }
 
@@ -949,6 +994,7 @@ public class ZSet<K> {
             }
 
             this.length--;
+            this.modCount++;
         }
 
         /**
@@ -1428,14 +1474,14 @@ public class ZSet<K> {
          */
         String dump() {
             final StringBuilder sb = new StringBuilder("{level = 0, nodeArray:[\n");
-            SkipListNode curNode = this.header.levelInfo[0].forward;
+            SkipListNode<K> curNode = this.header.directForward();
             int rank = 0;
             while (curNode != null) {
                 sb.append("{rank:").append(rank++)
                         .append(",obj:").append(curNode.obj)
                         .append(",score:").append(curNode.score);
 
-                curNode = curNode.levelInfo[0].forward;
+                curNode = curNode.directForward();
 
                 if (curNode != null) {
                     sb.append("},\n");
@@ -1467,6 +1513,7 @@ public class ZSet<K> {
         final SkipListLevel<K>[] levelInfo;
         /**
          * 该节点的前向指针
+         * <b>NOTE:</b>(不包含header)
          * backward字段是指向链表前一个节点的指针（前向指针）。
          * 节点只有1个前向指针，所以只有第1层链表是一个双向链表。
          */
@@ -1477,6 +1524,13 @@ public class ZSet<K> {
             this.score = score;
             // noinspection unchecked
             this.levelInfo = levelInfo;
+        }
+
+        /**
+         * @return 该节点的直接后继节点
+         */
+        SkipListNode<K> directForward() {
+            return levelInfo[0].forward;
         }
     }
 
@@ -1526,26 +1580,98 @@ public class ZSet<K> {
         }
     }
 
+    // region 迭代
+
+    /**
+     * ZSet迭代器
+     * Q: 为什么不写在{@link SkipList}中？
+     * A: 因为删除数据需要访问{@link #dict}。
+     */
+    private class ZSetItr implements Iterator<Member<K>> {
+
+        private SkipListNode<K> lastReturned;
+        private SkipListNode<K> next;
+        int expectedModCount = zsl.modCount;
+
+        ZSetItr(SkipListNode<K> next) {
+            this.next = next;
+        }
+
+        public boolean hasNext() {
+            return next != null;
+        }
+
+        public Member<K> next() {
+            checkForComodification();
+
+            if (next == null) {
+                throw new NoSuchElementException();
+            }
+
+            lastReturned = next;
+            next = next.directForward();
+
+            return new Member<>(lastReturned.obj, lastReturned.score);
+        }
+
+        public void remove() {
+            if (lastReturned == null) {
+                throw new IllegalStateException();
+            }
+
+            checkForComodification();
+
+            // remove lastReturned
+            dict.remove(lastReturned.obj);
+            zsl.zslDelete(lastReturned.score, lastReturned.obj);
+
+            // reset lastReturned
+            lastReturned = null;
+            expectedModCount = zsl.modCount;
+        }
+
+        final void checkForComodification() {
+            if (zsl.modCount != expectedModCount)
+                throw new ConcurrentModificationException();
+        }
+    }
+
+    // endregion
+
     // - 测试用例
 
     public static void main(String[] args) {
-        final ZSet<Integer> zSet = ZSet.newIntKeyZSet(ScoreHandlers.scoreHandler(true));
+        final ZSet<String> zSet = ZSet.newStringKeyZSet(ScoreHandlers.scoreHandler(true));
 
         // 插入数据
-        IntStream.rangeClosed(1, 10000).forEach(member -> {
+        IntStream.rangeClosed(1, 1000).forEach(member -> {
             // 使用nextInt避免越界，导致一些奇怪的值
-            zSet.zadd(ThreadLocalRandom.current().nextInt(0, 10000), member);
+            zSet.zadd(ThreadLocalRandom.current().nextInt(0, 10000), Integer.toString(member));
         });
 
         // 增量更新
-        IntStream.rangeClosed(1, 10000).forEach(member -> {
-            zSet.zincrby(ThreadLocalRandom.current().nextInt(0, 10000), member);
+        IntStream.rangeClosed(1, 1000).forEach(member -> {
+            zSet.zincrby(ThreadLocalRandom.current().nextInt(0, 10000), Integer.toString(member));
         });
 
         System.out.println("------------------------- dump ----------------------");
         System.out.println(zSet.zsl.dump());
         // 由于不是很好调试，建议在debug界面根据输出信息调试
-        System.out.println("debug");
+        System.out.println();
+
+        System.out.println("------------------------- scan ----------------------");
+        final Iterator<Member<String>> itr = zSet.zscan(0);
+        for (int rank = 0; itr.hasNext(); rank++) {
+            final Member<String> member = itr.next();
+            System.out.println("rank:" + rank + ", member:" + member);
+
+            if (rank > 0 && rank % 10 == 0) {
+                itr.remove();
+            }
+        }
+
+        System.out.println("------------------------- dump ----------------------");
+        System.out.println(zSet.zsl.dump());
     }
 
 }
