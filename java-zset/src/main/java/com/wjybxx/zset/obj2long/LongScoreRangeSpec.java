@@ -14,7 +14,7 @@
  *  limitations under the License.
  */
 
-package com.wjybxx.zset.primitive;
+package com.wjybxx.zset.obj2long;
 
 /**
  * Score范围区间
@@ -23,7 +23,7 @@ package com.wjybxx.zset.primitive;
  * @version 1.0
  * date - 2019/11/7
  */
-public class ScoreRangeSpec {
+public class LongScoreRangeSpec {
 
     /**
      * 起始分数 - 最高分或最低分
@@ -44,11 +44,11 @@ public class ScoreRangeSpec {
      */
     private final boolean endEx;
 
-    public ScoreRangeSpec(long start, long end) {
+    public LongScoreRangeSpec(long start, long end) {
         this(start, false, end, false);
     }
 
-    public ScoreRangeSpec(long start, boolean startEx, long end, boolean endEx) {
+    public LongScoreRangeSpec(long start, boolean startEx, long end, boolean endEx) {
         this.start = start;
         this.startEx = startEx;
         this.end = end;

@@ -14,7 +14,7 @@
  *  limitations under the License.
  */
 
-package com.wjybxx.zset.primitive;
+package com.wjybxx.zset.obj2long;
 
 /**
  * long类型的score处理器
@@ -23,7 +23,7 @@ package com.wjybxx.zset.primitive;
  * @version 1.0
  * date - 2019/11/7
  */
-public interface ScoreHandler {
+public interface LongScoreHandler {
 
     /**
      * 比较两个分数的大小

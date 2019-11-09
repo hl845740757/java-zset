@@ -1,20 +1,22 @@
-package com.wjybxx.zset.generic;
+package com.wjybxx.zset.long2obj;
+
+import com.wjybxx.zset.generic.ScoreHandler;
 
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.LongStream;
 
 /**
- * {@link GenericZSet}的复杂score测试
+ * {@link Long2ObjZSet}的测试用例
  *
  * @author wjybxx
  * @version 1.0
- * date - 2019/11/7
+ * date - 2019/11/9
  * github - https://github.com/hl845740757
  */
-public class GenericZSetTest {
+public class Long2ObjZSetTest {
 
     public static void main(String[] args) {
-        final GenericZSet<Long, ComplexScore> zSet = GenericZSet.newLongKeyZSet(new ComplexScoreHandler());
+        final Long2ObjZSet<ComplexScore> zSet = Long2ObjZSet.newZSet(new ComplexScoreHandler());
 
         // 插入数据
         LongStream.range(1, 10000).forEach(playerId -> {

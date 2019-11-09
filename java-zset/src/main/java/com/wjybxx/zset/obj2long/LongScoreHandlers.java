@@ -14,7 +14,7 @@
  *  limitations under the License.
  */
 
-package com.wjybxx.zset.primitive;
+package com.wjybxx.zset.obj2long;
 
 /**
  * 基础分数比较器
@@ -23,16 +23,16 @@ package com.wjybxx.zset.primitive;
  * @version 1.0
  * date - 2019/11/7
  */
-public class ScoreHandlers {
+public class LongScoreHandlers {
 
-    private ScoreHandlers() {
+    private LongScoreHandlers() {
 
     }
 
     /**
      * @return Long类型的score处理器
      */
-    public static ScoreHandler scoreHandler() {
+    public static LongScoreHandler scoreHandler() {
         return scoreHandler(false);
     }
 
@@ -43,14 +43,14 @@ public class ScoreHandlers {
      * @param desc 是否降序
      * @return 分数比较器
      */
-    public static ScoreHandler scoreHandler(boolean desc) {
+    public static LongScoreHandler scoreHandler(boolean desc) {
         return desc ? DescScoreHandler.INSTANCE : AscScoreHandler.INSTANCE;
     }
 
     /**
      * 升序比较器
      */
-    private static class AscScoreHandler implements ScoreHandler {
+    private static class AscScoreHandler implements LongScoreHandler {
 
         private static AscScoreHandler INSTANCE = new AscScoreHandler();
 
@@ -68,7 +68,7 @@ public class ScoreHandlers {
     /**
      * 降序比较器
      */
-    private static class DescScoreHandler implements ScoreHandler {
+    private static class DescScoreHandler implements LongScoreHandler {
 
         private static DescScoreHandler INSTANCE = new DescScoreHandler();
 

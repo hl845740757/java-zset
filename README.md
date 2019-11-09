@@ -1,6 +1,7 @@
 # java-zset
-redis的zset的java实现，包含两个版本，一个long类型score的实现，一个泛型score的实现。两种zset除了score的区别以外，没有别的区别。  
-java-zset实现了redis zset中的常用命令。此外，扩展zset较为容易，你可以在理解后自行添加需要的特性。
+redis的zset的java实现，实现了redis zset中的常用命令，包含3个版本，Long2ObjZset, Obj2LongZset, GenericZSet。  
+GenericZSet是基准实现，Long2ObjZset, Obj2LongZset是GenericZSet特化实现，以减少大量的拆装箱。  
+此外，扩展zset较为容易，你可以在理解后自行添加需要的特性。
 
 #### 主要参考
  * [lua 版zset实现](https://github.com/XanthusL/zset)
