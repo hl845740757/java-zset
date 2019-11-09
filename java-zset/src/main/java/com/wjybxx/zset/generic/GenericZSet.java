@@ -73,20 +73,6 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
     }
 
     /**
-     * @return zset中的成员数量
-     */
-    public int zcard() {
-        return zsl.length();
-    }
-
-    /**
-     * @return zset中当前的成员信息，用于测试
-     */
-    public String dump() {
-        return zsl.dump();
-    }
-
-    /**
      * 创建一个键为string类型的zset
      *
      * @param scoreHandler 分数处理器
@@ -714,6 +700,14 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
         }
         return count;
     }
+
+    /**
+     * @return zset中的成员数量
+     */
+    public int zcard() {
+        return zsl.length();
+    }
+
     // endregion
 
     // region 迭代
@@ -754,6 +748,12 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
     }
     // endregion
 
+    /**
+     * @return zset中当前的成员信息，用于debug
+     */
+    public String dump() {
+        return zsl.dump();
+    }
     // ------------------------------------------------------- 内部实现 ----------------------------------------
 
     /**
@@ -781,6 +781,15 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
          * - 其实也可以使用{@link ThreadLocalRandom}
          */
         private final Random random = new Random();
+        /**
+         * 更新节点使用的缓存 - 避免频繁的申请空间
+         */
+        @SuppressWarnings("unchecked")
+        private final SkipListNode<K, S>[] updateCache = new SkipListNode[ZSKIPLIST_MAXLEVEL];
+        /**
+         * 插入节点的排名缓存
+         */
+        private final int[] rankCache = new int[ZSKIPLIST_MAXLEVEL];
 
         private final Comparator<K> objComparator;
         private final ScoreHandler<S> scoreHandler;
@@ -851,83 +860,91 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
             // rank - 新节点各层前驱的当前排名
             // 这里不必创建一个ZSKIPLIST_MAXLEVEL长度的数组，它取决于插入节点后的新高度，你在别处看见的代码会造成大量的空间浪费，增加GC压力。
             // 如果创建的都是ZSKIPLIST_MAXLEVEL长度的数组，那么应该实现缓存
-            @SuppressWarnings("unchecked") final SkipListNode<K, S>[] update = new SkipListNode[Math.max(level, this.level)];
-            final int[] rank = new int[update.length];
+//            @SuppressWarnings("unchecked")
+//            final SkipListNode<K, S>[] update = new SkipListNode[Math.max(level, this.level)];
+//            final int[] rank = new int[update.length];
 
-            // preNode - 新插入节点的前驱节点
-            SkipListNode<K, S> preNode = header;
-            for (int i = this.level - 1; i >= 0; i--) {
-                /* store rank that is crossed to reach the insert position */
-                if (i == (this.level - 1)) {
-                    // 起始点，也就是head，它的排名就是0
-                    rank[i] = 0;
+            final SkipListNode<K, S>[] update = updateCache;
+            final int[] rank = rankCache;
+            try {
+                // preNode - 新插入节点的前驱节点
+                SkipListNode<K, S> preNode = header;
+                for (int i = this.level - 1; i >= 0; i--) {
+                    /* store rank that is crossed to reach the insert position */
+                    if (i == (this.level - 1)) {
+                        // 起始点，也就是head，它的排名就是0
+                        rank[i] = 0;
+                    } else {
+                        // 由于是回溯降级继续遍历，因此其初始排名是前一次遍历的排名
+                        rank[i] = rank[i + 1];
+                    }
+
+                    while (preNode.levelInfo[i].forward != null &&
+                            compareScoreAndObj(preNode.levelInfo[i].forward, score, obj) < 0) {
+                        // preNode的后继节点仍然小于要插入的节点，需要继续前进，同时累计排名
+                        rank[i] += preNode.levelInfo[i].span;
+                        preNode = preNode.levelInfo[i].forward;
+                    }
+
+                    // 这是要插入节点的第i层的前驱节点，此时触发降级
+                    update[i] = preNode;
+                }
+
+                if (level > this.level) {
+                    /* 新节点的层级大于当前层级，那么高出来的层级导致需要更新head，且排名和跨度是固定的 */
+                    for (int i = this.level; i < level; i++) {
+                        rank[i] = 0;
+                        update[i] = this.header;
+                        update[i].levelInfo[i].span = this.length;
+                    }
+                    this.level = level;
+                }
+
+                /* 由于我们允许的重复score，并且zslInsert(该方法)的调用者在插入前必须测试要插入的member是否已经在hash表中。
+                 * 因此我们假设key（obj）尚未被插入，并且重复插入score的情况永远不会发生。*/
+                /* we assume the key is not already inside, since we allow duplicated
+                 * scores, and the re-insertion of score and redis object should never
+                 * happen since the caller of zslInsert() should test in the hash table
+                 * if the element is already inside or not.*/
+                final SkipListNode<K, S> newNode = zslCreateNode(level, score, obj);
+
+                /* 这些节点的高度小于等于新插入的节点的高度，需要更新指针。此外它们当前的跨度被拆分了两部分，需要重新计算。 */
+                for (int i = 0; i < level; i++) {
+                    /* 链接新插入的节点 */
+                    newNode.levelInfo[i].forward = update[i].levelInfo[i].forward;
+                    update[i].levelInfo[i].forward = newNode;
+
+                    /* rank[0] 是新节点的直接前驱的排名，每一层都有一个前驱，可以通过彼此的排名计算跨度 */
+                    /* 计算新插入节点的跨度 和 重新计算所有前驱节点的跨度，之前的跨度被拆分为了两份*/
+                    /* update span covered by update[i] as newNode is inserted here */
+                    newNode.levelInfo[i].span = update[i].levelInfo[i].span - (rank[0] - rank[i]);
+                    update[i].levelInfo[i].span = (rank[0] - rank[i]) + 1;
+                }
+
+                /*  这些节点高于新插入的节点，它们的跨度可以简单的+1 */
+                /* increment span for untouched levels */
+                for (int i = level; i < this.level; i++) {
+                    update[i].levelInfo[i].span++;
+                }
+
+                /* 设置新节点的前向节点(回溯节点) - 这里不包含header，一定注意 */
+                newNode.backward = (update[0] == this.header) ? null : update[0];
+
+                /* 设置新节点的后向节点 */
+                if (newNode.levelInfo[0].forward != null) {
+                    newNode.levelInfo[0].forward.backward = newNode;
                 } else {
-                    // 由于是回溯降级继续遍历，因此其初始排名是前一次遍历的排名
-                    rank[i] = rank[i + 1];
+                    this.tail = newNode;
                 }
 
-                while (preNode.levelInfo[i].forward != null &&
-                        compareScoreAndObj(preNode.levelInfo[i].forward, score, obj) < 0) {
-                    // preNode的后继节点仍然小于要插入的节点，需要继续前进，同时累计排名
-                    rank[i] += preNode.levelInfo[i].span;
-                    preNode = preNode.levelInfo[i].forward;
-                }
+                this.length++;
+                this.modCount++;
 
-                // 这是要插入节点的第i层的前驱节点，此时触发降级
-                update[i] = preNode;
+                return newNode;
+            } finally {
+                releaseUpdate(update);
+                releaseRank(rank);
             }
-
-            if (level > this.level) {
-                /* 新节点的层级大于当前层级，那么高出来的层级导致需要更新head，且排名和跨度是固定的 */
-                for (int i = this.level; i < level; i++) {
-                    rank[i] = 0;
-                    update[i] = this.header;
-                    update[i].levelInfo[i].span = this.length;
-                }
-                this.level = level;
-            }
-
-            /* 由于我们允许的重复score，并且zslInsert(该方法)的调用者在插入前必须测试要插入的member是否已经在hash表中。
-             * 因此我们假设key（obj）尚未被插入，并且重复插入score的情况永远不会发生。*/
-            /* we assume the key is not already inside, since we allow duplicated
-             * scores, and the re-insertion of score and redis object should never
-             * happen since the caller of zslInsert() should test in the hash table
-             * if the element is already inside or not.*/
-            final SkipListNode<K, S> newNode = zslCreateNode(level, score, obj);
-
-            /* 这些节点的高度小于等于新插入的节点的高度，需要更新指针。此外它们当前的跨度被拆分了两部分，需要重新计算。 */
-            for (int i = 0; i < level; i++) {
-                /* 链接新插入的节点 */
-                newNode.levelInfo[i].forward = update[i].levelInfo[i].forward;
-                update[i].levelInfo[i].forward = newNode;
-
-                /* rank[0] 是新节点的直接前驱的排名，每一层都有一个前驱，可以通过彼此的排名计算跨度 */
-                /* 计算新插入节点的跨度 和 重新计算所有前驱节点的跨度，之前的跨度被拆分为了两份*/
-                /* update span covered by update[i] as newNode is inserted here */
-                newNode.levelInfo[i].span = update[i].levelInfo[i].span - (rank[0] - rank[i]);
-                update[i].levelInfo[i].span = (rank[0] - rank[i]) + 1;
-            }
-
-            /*  这些节点高于新插入的节点，它们的跨度可以简单的+1 */
-            /* increment span for untouched levels */
-            for (int i = level; i < this.level; i++) {
-                update[i].levelInfo[i].span++;
-            }
-
-            /* 设置新节点的前向节点(回溯节点) - 这里不包含header，一定注意 */
-            newNode.backward = (update[0] == this.header) ? null : update[0];
-
-            /* 设置新节点的后向节点 */
-            if (newNode.levelInfo[0].forward != null) {
-                newNode.levelInfo[0].forward.backward = newNode;
-            } else {
-                this.tail = newNode;
-            }
-
-            this.length++;
-            this.modCount++;
-
-            return newNode;
         }
 
         /**
@@ -941,30 +958,35 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
             // update - 需要更新后继节点的Node
             // 1. 分数小的节点
             // 2. 分数相同但id小的节点（分数相同时根据数据排序）
-            final SkipListNode[] update = new SkipListNode[this.level];
+//            final SkipListNode[] update = new SkipListNode[this.level];
 
-            SkipListNode<K, S> preNode = this.header;
-            for (int i = this.level - 1; i >= 0; i--) {
-                while (preNode.levelInfo[i].forward != null &&
-                        compareScoreAndObj(preNode.levelInfo[i].forward, score, obj) < 0) {
-                    // preNode的后继节点仍然小于要删除的节点，需要继续前进
-                    preNode = preNode.levelInfo[i].forward;
+            final SkipListNode<K, S>[] update = updateCache;
+            try {
+                SkipListNode<K, S> preNode = this.header;
+                for (int i = this.level - 1; i >= 0; i--) {
+                    while (preNode.levelInfo[i].forward != null &&
+                            compareScoreAndObj(preNode.levelInfo[i].forward, score, obj) < 0) {
+                        // preNode的后继节点仍然小于要删除的节点，需要继续前进
+                        preNode = preNode.levelInfo[i].forward;
+                    }
+                    // 这是目标节点第i层的可能前驱节点
+                    update[i] = preNode;
                 }
-                // 这是目标节点第i层的可能前驱节点
-                update[i] = preNode;
-            }
 
-            /* 由于可能多个节点拥有相同的分数，因此必须同时比较score和object */
-            /* We may have multiple elements with the same score, what we need
-             * is to find the element with both the right score and object. */
-            final SkipListNode<K, S> targetNode = preNode.levelInfo[0].forward;
-            if (targetNode != null && scoreEquals(targetNode.score, score) && objEquals(targetNode.obj, obj)) {
-                zslDeleteNode(targetNode, update);
-                return true;
-            }
+                /* 由于可能多个节点拥有相同的分数，因此必须同时比较score和object */
+                /* We may have multiple elements with the same score, what we need
+                 * is to find the element with both the right score and object. */
+                final SkipListNode<K, S> targetNode = preNode.levelInfo[0].forward;
+                if (targetNode != null && scoreEquals(targetNode.score, score) && objEquals(targetNode.obj, obj)) {
+                    zslDeleteNode(targetNode, update);
+                    return true;
+                }
 
-            /* not found */
-            return false;
+                /* not found */
+                return false;
+            } finally {
+                releaseUpdate(update);
+            }
         }
 
         /**
@@ -1145,33 +1167,38 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
          * @return 删除的节点数量
          */
         int zslDeleteRangeByScore(ZScoreRangeSpec<S> range, Map<K, S> dict) {
-            final SkipListNode[] update = new SkipListNode[this.level];
-            int removed = 0;
+//            final SkipListNode[] update = new SkipListNode[this.level];
+            final SkipListNode<K, S>[] update = updateCache;
+            try {
+                int removed = 0;
 
-            SkipListNode<K, S> lastNodeLtMin = this.header;
-            for (int i = this.level - 1; i >= 0; i--) {
-                while (lastNodeLtMin.levelInfo[i].forward != null &&
-                        !zslValueGteMin(lastNodeLtMin.levelInfo[i].forward.score, range)) {
-                    lastNodeLtMin = lastNodeLtMin.levelInfo[i].forward;
+                SkipListNode<K, S> lastNodeLtMin = this.header;
+                for (int i = this.level - 1; i >= 0; i--) {
+                    while (lastNodeLtMin.levelInfo[i].forward != null &&
+                            !zslValueGteMin(lastNodeLtMin.levelInfo[i].forward.score, range)) {
+                        lastNodeLtMin = lastNodeLtMin.levelInfo[i].forward;
+                    }
+                    update[i] = lastNodeLtMin;
                 }
-                update[i] = lastNodeLtMin;
-            }
 
-            /* 当前节点是小于目标范围最小值的最后一个节点，它的下一个节点可能为null，或大于等于最小值 */
-            /* Current node is the last with score < or <= min. */
-            SkipListNode<K, S> firstNodeGteMin = lastNodeLtMin.levelInfo[0].forward;
+                /* 当前节点是小于目标范围最小值的最后一个节点，它的下一个节点可能为null，或大于等于最小值 */
+                /* Current node is the last with score < or <= min. */
+                SkipListNode<K, S> firstNodeGteMin = lastNodeLtMin.levelInfo[0].forward;
 
-            /* 删除在范围内的节点(小于等于最大值的节点) */
-            /* Delete nodes while in range. */
-            while (firstNodeGteMin != null
-                    && zslValueLteMax(firstNodeGteMin.score, range)) {
-                final SkipListNode<K, S> next = firstNodeGteMin.levelInfo[0].forward;
-                zslDeleteNode(firstNodeGteMin, update);
-                dict.remove(firstNodeGteMin.obj);
-                removed++;
-                firstNodeGteMin = next;
+                /* 删除在范围内的节点(小于等于最大值的节点) */
+                /* Delete nodes while in range. */
+                while (firstNodeGteMin != null
+                        && zslValueLteMax(firstNodeGteMin.score, range)) {
+                    final SkipListNode<K, S> next = firstNodeGteMin.levelInfo[0].forward;
+                    zslDeleteNode(firstNodeGteMin, update);
+                    dict.remove(firstNodeGteMin.obj);
+                    removed++;
+                    firstNodeGteMin = next;
+                }
+                return removed;
+            } finally {
+                releaseUpdate(update);
             }
-            return removed;
         }
 
         /**
@@ -1187,35 +1214,40 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
          * @return 删除的成员数量
          */
         int zslDeleteRangeByRank(int start, int end, Map<K, S> dict) {
-            final SkipListNode[] update = new SkipListNode[this.level];
-            /* 已遍历的真实成员数量，表示成员的真实排名 */
-            int traversed = 0;
-            int removed = 0;
+//            final SkipListNode[] update = new SkipListNode[this.level];
+            final SkipListNode<K, S>[] update = updateCache;
+            try {
+                /* 已遍历的真实成员数量，表示成员的真实排名 */
+                int traversed = 0;
+                int removed = 0;
 
-            SkipListNode<K, S> lastNodeLtStart = this.header;
-            for (int i = this.level - 1; i >= 0; i--) {
-                while (lastNodeLtStart.levelInfo[i].forward != null &&
-                        (traversed + lastNodeLtStart.levelInfo[i].span) < start) {
-                    // 下一个节点的排名还未到范围内，继续前进
-                    traversed += lastNodeLtStart.levelInfo[i].span;
-                    lastNodeLtStart = lastNodeLtStart.levelInfo[i].forward;
+                SkipListNode<K, S> lastNodeLtStart = this.header;
+                for (int i = this.level - 1; i >= 0; i--) {
+                    while (lastNodeLtStart.levelInfo[i].forward != null &&
+                            (traversed + lastNodeLtStart.levelInfo[i].span) < start) {
+                        // 下一个节点的排名还未到范围内，继续前进
+                        traversed += lastNodeLtStart.levelInfo[i].span;
+                        lastNodeLtStart = lastNodeLtStart.levelInfo[i].forward;
+                    }
+                    update[i] = lastNodeLtStart;
                 }
-                update[i] = lastNodeLtStart;
-            }
 
-            traversed++;
-
-            /* levelInfo[0] 最下面一层就是要删除节点的直接前驱 */
-            SkipListNode<K, S> firstNodeGteStart = lastNodeLtStart.levelInfo[0].forward;
-            while (firstNodeGteStart != null && traversed <= end) {
-                final SkipListNode<K, S> next = firstNodeGteStart.levelInfo[0].forward;
-                zslDeleteNode(firstNodeGteStart, update);
-                dict.remove(firstNodeGteStart.obj);
-                removed++;
                 traversed++;
-                firstNodeGteStart = next;
+
+                /* levelInfo[0] 最下面一层就是要删除节点的直接前驱 */
+                SkipListNode<K, S> firstNodeGteStart = lastNodeLtStart.levelInfo[0].forward;
+                while (firstNodeGteStart != null && traversed <= end) {
+                    final SkipListNode<K, S> next = firstNodeGteStart.levelInfo[0].forward;
+                    zslDeleteNode(firstNodeGteStart, update);
+                    dict.remove(firstNodeGteStart.obj);
+                    removed++;
+                    traversed++;
+                    firstNodeGteStart = next;
+                }
+                return removed;
+            } finally {
+                releaseUpdate(update);
             }
-            return removed;
         }
 
         /**
@@ -1227,28 +1259,32 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
          * @return 删除的节点
          */
         SkipListNode<K, S> zslDeleteByRank(int rank, Map<K, S> dict) {
-            final SkipListNode[] update = new SkipListNode[this.level];
-            int traversed = 0;
-
-            SkipListNode<K, S> lastNodeLtStart = this.header;
-            for (int i = this.level - 1; i >= 0; i--) {
-                while (lastNodeLtStart.levelInfo[i].forward != null &&
-                        (traversed + lastNodeLtStart.levelInfo[i].span) < rank) {
-                    // 下一个节点的排名还未到范围内，继续前进
-                    traversed += lastNodeLtStart.levelInfo[i].span;
-                    lastNodeLtStart = lastNodeLtStart.levelInfo[i].forward;
+//            final SkipListNode[] update = new SkipListNode[this.level];
+            final SkipListNode<K, S>[] update = updateCache;
+            try {
+                int traversed = 0;
+                SkipListNode<K, S> lastNodeLtStart = this.header;
+                for (int i = this.level - 1; i >= 0; i--) {
+                    while (lastNodeLtStart.levelInfo[i].forward != null &&
+                            (traversed + lastNodeLtStart.levelInfo[i].span) < rank) {
+                        // 下一个节点的排名还未到范围内，继续前进
+                        traversed += lastNodeLtStart.levelInfo[i].span;
+                        lastNodeLtStart = lastNodeLtStart.levelInfo[i].forward;
+                    }
+                    update[i] = lastNodeLtStart;
                 }
-                update[i] = lastNodeLtStart;
-            }
 
-            /* levelInfo[0] 最下面一层就是要删除节点的直接前驱 */
-            final SkipListNode<K, S> targetRankNode = lastNodeLtStart.levelInfo[0].forward;
-            if (null != targetRankNode) {
-                zslDeleteNode(targetRankNode, update);
-                dict.remove(targetRankNode.obj);
-                return targetRankNode;
-            } else {
-                return null;
+                /* levelInfo[0] 最下面一层就是要删除节点的直接前驱 */
+                final SkipListNode<K, S> targetRankNode = lastNodeLtStart.levelInfo[0].forward;
+                if (null != targetRankNode) {
+                    zslDeleteNode(targetRankNode, update);
+                    dict.remove(targetRankNode.obj);
+                    return targetRankNode;
+                } else {
+                    return null;
+                }
+            } finally {
+                releaseUpdate(update);
             }
         }
 
@@ -1474,6 +1510,24 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
          */
         private boolean scoreEquals(S score1, S score2) {
             return compareScore(score1, score2) == 0;
+        }
+
+        /**
+         * 释放update引用的对象
+         */
+        private static <K, S> void releaseUpdate(SkipListNode<K, S>[] update) {
+            for (int index = 0; index < ZSKIPLIST_MAXLEVEL; index++) {
+                update[index] = null;
+            }
+        }
+
+        /**
+         * 重置rank中的数据
+         */
+        private static void releaseRank(int[] rank) {
+            for (int index = 0; index < ZSKIPLIST_MAXLEVEL; index++) {
+                rank[index] = 0;
+            }
         }
 
         /**
