@@ -20,7 +20,7 @@ public class Obj2LongZSetTest {
         final Obj2LongZSet<Long> zSet = Obj2LongZSet.newLongKeyZSet(new ComplexScoreHandler());
 
         // 插入数据
-        LongStream.range(1, 10000).forEach(playerId -> {
+        LongStream.rangeClosed(1, 10000).forEach(playerId -> {
             zSet.zadd(randomScore(), playerId);
         });
 

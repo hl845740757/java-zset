@@ -167,6 +167,25 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
         return score;
     }
 
+    /**
+     * 为有序集的成员member的score值加上增量increment，并更新到正确的排序位置。
+     * 如果有序集中不存在member，则放弃更新并返回null。
+     *
+     * @param increment 自定义增量
+     * @param member    成员id
+     * @return 当前值，如果更新失败，则返回null。
+     */
+    public S zincrbynx(S increment, @Nonnull K member) {
+        final S oldScore = dict.get(member);
+        if (oldScore == null) {
+            return null;
+        }
+
+        final S score = zsl.sum(oldScore, increment);
+        zadd(score, member);
+        return score;
+    }
+
     // -------------------------------------------------------- remove -----------------------------------------------
 
     /**
@@ -243,7 +262,7 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
      * @return 如果不存在，则返回null
      */
     @Nullable
-    public Member<K, S> zpopFisrt() {
+    public Member<K, S> zpopFirst() {
         return zremByRank(0);
     }
 
