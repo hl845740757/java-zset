@@ -175,7 +175,7 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
      * @param member    成员id
      * @return 当前值，如果更新失败，则返回null。
      */
-    public S zincrbynx(S increment, @Nonnull K member) {
+    public S zincrbyxx(S increment, @Nonnull K member) {
         final S oldScore = dict.get(member);
         if (oldScore == null) {
             return null;

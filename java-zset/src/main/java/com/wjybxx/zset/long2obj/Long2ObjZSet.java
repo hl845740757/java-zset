@@ -155,7 +155,7 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
      * @param member    成员id
      * @return 当前值，如果更新失败，则返回null。
      */
-    public S zincrbynx(S increment, long member) {
+    public S zincrbyxx(S increment, long member) {
         final S oldScore = dict.get(member);
         if (oldScore == null) {
             return null;
