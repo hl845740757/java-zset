@@ -859,7 +859,7 @@ public class Obj2LongZSet<K> implements Iterable<Obj2LongMember<K>> {
 
             final SkipListNode<K>[] update = updateCache;
             final int[] rank = rankCache;
-
+            final int realLength = Math.max(level, this.level);
             try {
                 // preNode - 新插入节点的前驱节点
                 SkipListNode<K> preNode = header;
@@ -936,8 +936,8 @@ public class Obj2LongZSet<K> implements Iterable<Obj2LongMember<K>> {
 
                 return newNode;
             } finally {
-                releaseUpdate(update);
-                releaseRank(rank);
+                releaseUpdate(update, realLength);
+                releaseRank(rank, realLength);
             }
         }
 
@@ -954,6 +954,7 @@ public class Obj2LongZSet<K> implements Iterable<Obj2LongMember<K>> {
             // 2. 分数相同但id小的节点（分数相同时根据数据排序）
 //            final SkipListNode[] update = new SkipListNode[this.level];
             final SkipListNode<K>[] update = updateCache;
+            final int realLength = this.level;
             try {
                 SkipListNode<K> preNode = this.header;
                 for (int i = this.level - 1; i >= 0; i--) {
@@ -978,7 +979,7 @@ public class Obj2LongZSet<K> implements Iterable<Obj2LongMember<K>> {
                 /* not found */
                 return false;
             } finally {
-                releaseUpdate(update);
+                releaseUpdate(update, realLength);
             }
         }
 
@@ -1162,6 +1163,7 @@ public class Obj2LongZSet<K> implements Iterable<Obj2LongMember<K>> {
         int zslDeleteRangeByScore(ZLongScoreRangeSpec range, Map<K, Long> dict) {
 //            final SkipListNode[] update = new SkipListNode[this.level];
             final SkipListNode<K>[] update = updateCache;
+            final int realLength = this.level;
             try {
                 int removed = 0;
                 SkipListNode<K> lastNodeLtMin = this.header;
@@ -1189,7 +1191,7 @@ public class Obj2LongZSet<K> implements Iterable<Obj2LongMember<K>> {
                 }
                 return removed;
             } finally {
-                releaseUpdate(update);
+                releaseUpdate(update, realLength);
             }
         }
 
@@ -1208,6 +1210,7 @@ public class Obj2LongZSet<K> implements Iterable<Obj2LongMember<K>> {
         int zslDeleteRangeByRank(int start, int end, Map<K, Long> dict) {
 //            final SkipListNode[] update = new SkipListNode[this.level];
             final SkipListNode<K>[] update = updateCache;
+            final int realLength = this.level;
             try {
                 /* 已遍历的真实成员数量，表示成员的真实排名 */
                 int traversed = 0;
@@ -1238,7 +1241,7 @@ public class Obj2LongZSet<K> implements Iterable<Obj2LongMember<K>> {
                 }
                 return removed;
             } finally {
-                releaseUpdate(update);
+                releaseUpdate(update, realLength);
             }
         }
 
@@ -1253,6 +1256,7 @@ public class Obj2LongZSet<K> implements Iterable<Obj2LongMember<K>> {
         SkipListNode<K> zslDeleteByRank(int rank, Map<K, Long> dict) {
 //            final SkipListNode[] update = new SkipListNode[this.level];
             final SkipListNode<K>[] update = updateCache;
+            final int realLength = this.level;
             try {
                 int traversed = 0;
 
@@ -1277,7 +1281,7 @@ public class Obj2LongZSet<K> implements Iterable<Obj2LongMember<K>> {
                     return null;
                 }
             } finally {
-                releaseUpdate(update);
+                releaseUpdate(update, realLength);
             }
         }
 
@@ -1507,8 +1511,8 @@ public class Obj2LongZSet<K> implements Iterable<Obj2LongMember<K>> {
         /**
          * 释放update引用的对象
          */
-        private static <K> void releaseUpdate(SkipListNode<K>[] update) {
-            for (int index = 0; index < ZSKIPLIST_MAXLEVEL; index++) {
+        private static <K> void releaseUpdate(SkipListNode<K>[] update, int realLength) {
+            for (int index = 0; index < realLength; index++) {
                 update[index] = null;
             }
         }
@@ -1516,8 +1520,8 @@ public class Obj2LongZSet<K> implements Iterable<Obj2LongMember<K>> {
         /**
          * 重置rank中的数据
          */
-        private static void releaseRank(int[] rank) {
-            for (int index = 0; index < ZSKIPLIST_MAXLEVEL; index++) {
+        private static void releaseRank(int[] rank, int realLength) {
+            for (int index = 0; index < realLength; index++) {
                 rank[index] = 0;
             }
         }

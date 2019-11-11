@@ -865,6 +865,7 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
 
             final SkipListNode<K, S>[] update = updateCache;
             final int[] rank = rankCache;
+            final int realLength = Math.max(level, this.level);
             try {
                 // preNode - 新插入节点的前驱节点
                 SkipListNode<K, S> preNode = header;
@@ -941,8 +942,8 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
 
                 return newNode;
             } finally {
-                releaseUpdate(update);
-                releaseRank(rank);
+                releaseUpdate(update, realLength);
+                releaseRank(rank, realLength);
             }
         }
 
@@ -960,6 +961,7 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
 //            final SkipListNode[] update = new SkipListNode[this.level];
 
             final SkipListNode<K, S>[] update = updateCache;
+            final int realLength = this.level;
             try {
                 SkipListNode<K, S> preNode = this.header;
                 for (int i = this.level - 1; i >= 0; i--) {
@@ -984,7 +986,7 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
                 /* not found */
                 return false;
             } finally {
-                releaseUpdate(update);
+                releaseUpdate(update, realLength);
             }
         }
 
@@ -1168,6 +1170,7 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
         int zslDeleteRangeByScore(ZScoreRangeSpec<S> range, Map<K, S> dict) {
 //            final SkipListNode[] update = new SkipListNode[this.level];
             final SkipListNode<K, S>[] update = updateCache;
+            final int realLength = this.level;
             try {
                 int removed = 0;
 
@@ -1196,7 +1199,7 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
                 }
                 return removed;
             } finally {
-                releaseUpdate(update);
+                releaseUpdate(update, realLength);
             }
         }
 
@@ -1215,6 +1218,7 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
         int zslDeleteRangeByRank(int start, int end, Map<K, S> dict) {
 //            final SkipListNode[] update = new SkipListNode[this.level];
             final SkipListNode<K, S>[] update = updateCache;
+            final int realLength = this.level;
             try {
                 /* 已遍历的真实成员数量，表示成员的真实排名 */
                 int traversed = 0;
@@ -1245,7 +1249,7 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
                 }
                 return removed;
             } finally {
-                releaseUpdate(update);
+                releaseUpdate(update, realLength);
             }
         }
 
@@ -1260,6 +1264,7 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
         SkipListNode<K, S> zslDeleteByRank(int rank, Map<K, S> dict) {
 //            final SkipListNode[] update = new SkipListNode[this.level];
             final SkipListNode<K, S>[] update = updateCache;
+            final int realLength = this.level;
             try {
                 int traversed = 0;
                 SkipListNode<K, S> lastNodeLtStart = this.header;
@@ -1283,7 +1288,7 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
                     return null;
                 }
             } finally {
-                releaseUpdate(update);
+                releaseUpdate(update, realLength);
             }
         }
 
@@ -1514,8 +1519,8 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
         /**
          * 释放update引用的对象
          */
-        private static <K, S> void releaseUpdate(SkipListNode<K, S>[] update) {
-            for (int index = 0; index < ZSKIPLIST_MAXLEVEL; index++) {
+        private static <K, S> void releaseUpdate(SkipListNode<K, S>[] update, int realLength) {
+            for (int index = 0; index < realLength; index++) {
                 update[index] = null;
             }
         }
@@ -1523,8 +1528,8 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
         /**
          * 重置rank中的数据
          */
-        private static void releaseRank(int[] rank) {
-            for (int index = 0; index < ZSKIPLIST_MAXLEVEL; index++) {
+        private static void releaseRank(int[] rank, int realLength) {
+            for (int index = 0; index < realLength; index++) {
                 rank[index] = 0;
             }
         }
