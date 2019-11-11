@@ -109,13 +109,11 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
     public void zadd(final S score, final long member) {
         final S oldScore = dict.put(member, score);
         if (oldScore != null) {
-            if (!zsl.scoreEquals(oldScore, score)) {
-                zsl.zslDelete(oldScore, member);
-                zsl.zslInsert(score, member);
-            }
-        } else {
-            zsl.zslInsert(score, member);
+            // Q: 为何不再判断分数相等？
+            // A: 这里假定分数相等的情况很少出现，可减少大量无用的判断
+            zsl.zslDelete(oldScore, member);
         }
+        zsl.zslInsert(score, member);
     }
 
     /**
