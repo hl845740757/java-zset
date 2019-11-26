@@ -17,6 +17,7 @@
 package com.wjybxx.zset.long2obj;
 
 
+import com.wjybxx.zset.ZSetUtils;
 import com.wjybxx.zset.generic.ScoreHandler;
 import com.wjybxx.zset.generic.ScoreRangeSpec;
 import com.wjybxx.zset.generic.ZScoreRangeSpec;
@@ -29,7 +30,8 @@ import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import javax.annotation.concurrent.NotThreadSafe;
 import java.util.*;
-import java.util.concurrent.ThreadLocalRandom;
+
+import static com.wjybxx.zset.ZSetUtils.ZSKIPLIST_MAXLEVEL;
 
 /**
  * key为long类型，score为泛型类型的sorted set - 参考redis的zset实现
@@ -41,12 +43,12 @@ import java.util.concurrent.ThreadLocalRandom;
  * <b>NOTE</b>：
  * 1. ZSET中的排名从0开始（提供给用户的接口，排名都从0开始）
  * <p>
- * 2. 我们允许zset中的成员是降序排列的(ScoreComparator决定)，可以更好的支持根据score降序的排行榜，
+ * 2. 我们允许zset中的成员是降序排列的{@link ScoreHandler}决定，可以更好的支持根据score降序的排行榜，
  * 而不是强迫你总是调用反转系列接口{@code zrev...}，那样的设计不符合人的正常思维，就很容易出错。
  * <p>
  * 3. 我们修改了redis中根据min和max查找和删除成员的接口，修改为start和end，当根据score范围查找或删除元素时，并不要求start小于等于end，我们会处理它们的大小关系。<br>
  * Q: 为什么要这么改动呢？<br>
- * A: 举个栗子：假如ScoreComparator比较两个long类型的score是逆序的，现在要删除排行榜中 1-10000分的成员，如果方法告诉你要传入的的是min和max，
+ * A: 举个栗子：假如ScoreHandler比较两个long类型的score是逆序的，现在要删除排行榜中 1-10000分的成员，如果方法告诉你要传入的的是min和max，
  * 你会很自然的传入想到 (1,10000) 而不是 (10000,1)。因此，如果接口不做调整，这个接口就太反人类了，谁用都得错。
  * <p>
  * 4. score泛型化以后，有一些注意事项，请查看{@link ScoreHandler}中关于score的注意事项。
@@ -63,12 +65,9 @@ import java.util.concurrent.ThreadLocalRandom;
 public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
 
     /**
-     * obj -> score
+     * member -> score
      */
-    private final Long2ObjectMap<S> dict = new Long2ObjectOpenHashMap<>(128);
-    /**
-     * scoreList
-     */
+    private final Long2ObjectMap<S> dict = new Long2ObjectOpenHashMap<>(ZSetUtils.INIT_CAPACITY);
     private final SkipList<S> zsl;
 
     private Long2ObjZSet(LongComparator objComparator, ScoreHandler<S> scoreHandler) {
@@ -138,7 +137,7 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
      *
      * @param increment 自定义增量
      * @param member    成员id
-     * @return 新值
+     * @return 更新后的值
      */
     public S zincrby(S increment, long member) {
         final S oldScore = dict.get(member);
@@ -153,7 +152,7 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
      *
      * @param increment 自定义增量
      * @param member    成员id
-     * @return 当前值，如果更新失败，则返回null。
+     * @return 更新后的值，如果更新失败，则返回null。
      */
     public S zincrbyxx(S increment, long member) {
         final S oldScore = dict.get(member);
@@ -221,21 +220,6 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
     // region 通过排名删除成员
 
     /**
-     * 删除指定排名的成员
-     *
-     * @param rank 排名 0-based
-     * @return 删除成功则返回该排名对应的数据，否则返回null
-     */
-    public Long2ObjMember<S> zremByRank(int rank) {
-        if (rank < 0 || rank >= zsl.length()) {
-            return null;
-        }
-        final SkipListNode<S> delete = zsl.zslDeleteByRank(rank + 1, dict);
-        assert null != delete;
-        return new Long2ObjMember<>(delete.obj, delete.score);
-    }
-
-    /**
      * 删除并返回有序集合中的第一个成员。
      * - 不使用min和max，是因为score的比较方式是用户自定义的。
      *
@@ -258,6 +242,22 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
     }
 
     /**
+     * 删除指定排名的成员
+     *
+     * @param rank 排名 0-based
+     * @return 删除成功则返回该排名对应的数据，否则返回null
+     */
+    @Nullable
+    public Long2ObjMember<S> zremByRank(int rank) {
+        if (rank < 0 || rank >= zsl.length()) {
+            return null;
+        }
+        final SkipListNode<S> delete = zsl.zslDeleteByRank(rank + 1, dict);
+        assert null != delete;
+        return new Long2ObjMember<>(delete.obj, delete.score);
+    }
+
+    /**
      * 删除指定排名范围的全部成员，start和end都是从0开始的。
      * 排名0表示分数最小的成员。
      * start和end都可以是负数，此时它们表示从最高排名成员开始的偏移量，eg: -1表示最高排名的成员， -2表示第二高分的成员，以此类推。
@@ -272,63 +272,16 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
     public int zremrangeByRank(int start, int end) {
         final int zslLength = zsl.length();
 
-        start = convertStartRank(start, zslLength);
-        end = convertEndRank(end, zslLength);
+        start = ZSetUtils.convertStartRank(start, zslLength);
+        end = ZSetUtils.convertEndRank(end, zslLength);
 
-        if (isRankRangeEmpty(start, end, zslLength)) {
+        if (ZSetUtils.isRankRangeEmpty(start, end, zslLength)) {
             return 0;
         }
 
         return zsl.zslDeleteRangeByRank(start + 1, end + 1, dict);
     }
 
-    /**
-     * 转换起始排名
-     *
-     * @param start     请求参数中的起始排名，0-based
-     * @param zslLength 跳表的长度
-     * @return 有效起始排名
-     */
-    private static int convertStartRank(int start, int zslLength) {
-        if (start < 0) {
-            start += zslLength;
-        }
-        if (start < 0) {
-            start = 0;
-        }
-        return start;
-    }
-
-    /**
-     * 转换截止排名
-     *
-     * @param end       请求参数中的截止排名，0-based
-     * @param zslLength 跳表的长度
-     * @return 有效截止排名
-     */
-    private static int convertEndRank(int end, int zslLength) {
-        if (end < 0) {
-            end += zslLength;
-        }
-        if (end >= zslLength) {
-            end = zslLength - 1;
-        }
-        return end;
-    }
-
-    /**
-     * 判断排名区间是否为空
-     *
-     * @param start     转换后的起始排名
-     * @param end       转换后的截止排名
-     * @param zslLength 跳表长度
-     * @return true/false
-     */
-    private static boolean isRankRangeEmpty(final int start, final int end, final int zslLength) {
-        /* Invariant: start >= 0, so this test will be true when end < 0.
-         * The range is empty when start > end or start >= length. */
-        return start > end || start >= zslLength;
-    }
     // endregion
 
     // region 限制成员数量
@@ -376,16 +329,14 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
     }
 
     /**
-     * 返回有序集中成员member的排名。其中有序集成员按score值递增(从小到大)顺序排列。
-     * 返回的排名从0开始(0-based)，也就是说，score值最小的成员排名为0。
-     * 使用{@link #zrevrank(long)}可以获得成员按score值递减(从大到小)排列的排名。
+     * 返回有序集中成员member的排名。
      * <p>
      * <b>Time complexity:</b> O(log(N))
      * <p>
      * <b>与redis的区别</b>：我们使用-1表示成员不存在，而不是返回null。
      *
      * @param member 成员id
-     * @return 如果存在该成员，则返回该成员的排名，否则返回-1
+     * @return 如果存在该成员，则返回该成员的排名(0-based)，否则返回-1
      */
     public int zrank(long member) {
         final S score = dict.get(member);
@@ -397,16 +348,14 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
     }
 
     /**
-     * 返回有序集中成员member的排名，其中有序集成员按score值从大到小排列。
-     * 返回的排名从0开始(0-based)，也就是说，score值最大的成员排名为0。
-     * 使用{@link #zrank(long)}可以获得成员按score值递增(从小到大)排列的排名。
+     * 返回有序集中成员member的逆序排名。
      * <p>
      * <b>Time complexity:</b> O(log(N))
      * <p>
      * <b>与redis的区别</b>：我们使用-1表示成员不存在，而不是返回null。
      *
      * @param member 成员id
-     * @return 如果存在该成员，则返回该成员的排名，否则返回-1
+     * @return 如果存在该成员，则返回该成员的排名(0-based)，否则返回-1
      */
     public int zrevrank(long member) {
         final S score = dict.get(member);
@@ -419,8 +368,6 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
 
     /**
      * 获取指定排名的成员数据。
-     * 成员被认为是从低分到高分排序的。
-     * 具有相同分数的成员按字典序排列。
      *
      * @param rank 排名 0-based
      * @return memver，如果不存在，则返回null
@@ -436,8 +383,6 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
 
     /**
      * 获取指定逆序排名的成员数据。
-     * 成员被认为是从高分到低分排序的。
-     * 具有相同score值的成员按字典序的反序排列。
      *
      * @param rank 排名 0-based
      * @return memver，如果不存在，则返回null
@@ -455,8 +400,6 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
 
     /**
      * 返回有序集合中的分数在start和end之间的所有成员（包括分数等于start或者end的成员）。
-     * 成员被认为是从低分到高分排序的。
-     * 具有相同分数的成员按字典序排列。
      *
      * @param start 起始分数 inclusive
      * @param end   截止分数 inclusive
@@ -468,8 +411,6 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
 
     /**
      * 返回有序集合中的分数在指定范围区间的所有成员。
-     * 成员被认为是从低分到高分排序的。
-     * 具有相同分数的成员按字典序排列。
      *
      * @param spec 范围描述信息
      * @return memberInfo
@@ -479,9 +420,7 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
     }
 
     /**
-     * 返回有序集合中的分数在start和end之间的所有成员（包括分数等于start或者end的成员）。
-     * 成员被认为是从高分到低分排序的。
-     * 具有相同score值的成员按字典序的反序排列。
+     * 返回有序集合中的分数在start和end之间的所有成员（包括分数等于start或者end的成员），返回的成员按照逆序排列。
      *
      * @param start 起始分数 inclusive
      * @param end   截止分数 inclusive
@@ -492,9 +431,7 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
     }
 
     /**
-     * 返回有序集合中的分数在指定范围之间的所有成员。
-     * 成员被认为是从高分到低分排序的。
-     * 具有相同score值的成员按字典序的反序排列。     *
+     * 返回有序集合中的分数在指定范围之间的所有成员，返回的成员按照逆序排列。
      *
      * @param rangeSpec score范围区间
      * @return 删除的成员数目
@@ -584,13 +521,10 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
     // region 通过排名查询
 
     /**
-     * 查询指定排名区间的成员id和分数，结果排名由低到高。
-     * start和end都是从0开始的。
-     * 其中成员的位置按score值递增(从小到大)来排列，排名0表示分数最小的成员。
-     * start和end都可以是负数，此时它们表示从最高排名成员开始的偏移量，eg: -1表示最高排名的成员， -2表示第二高分的成员，以此类推。
+     * 查询指定排名区间的成员信息
      *
-     * @param start 起始排名 inclusive
-     * @param end   截止排名 inclusive
+     * @param start 起始排名(0-based) inclusive
+     * @param end   截止排名(0-based) inclusive
      * @return memberInfo
      */
     public List<Long2ObjMember<S>> zrangeByRank(int start, int end) {
@@ -598,14 +532,10 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
     }
 
     /**
-     * 返回有序集中，指定区间内的成员。
-     * start和end都是从0开始的。
-     * 其中成员的位置按score值递减(从大到小)来排列，排名0表示分数最高的成员。
-     * 具有相同score值的成员按字典序的反序排列。
-     * 除了成员按score值递减的次序排列这一点外，{@code zrevrangeByRank} 方法的其它方面和 {@link #zrangeByRank(int, int)}相同。
+     * 查询指定逆序排名区间的成员信息
      *
-     * @param start 起始排名 inclusive
-     * @param end   截止排名 inclusive
+     * @param start 起始排名(0-based) inclusive
+     * @param end   截止排名(0-based) inclusive
      * @return memberInfo
      */
     public List<Long2ObjMember<S>> zrevrangeByRank(int start, int end) {
@@ -615,18 +545,18 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
     /**
      * 查询指定排名区间的成员id和分数，start和end都是从0开始的。
      *
-     * @param start   起始排名 inclusive
-     * @param end     截止排名 inclusive
+     * @param start   起始排名(0-based) inclusive
+     * @param end     截止排名(0-based) inclusive
      * @param reverse 是否逆序返回
-     * @return 区间范围内的成员id和score
+     * @return memberInfo
      */
     private List<Long2ObjMember<S>> zrangeByRankInternal(int start, int end, boolean reverse) {
         final int zslLength = zsl.length();
 
-        start = convertStartRank(start, zslLength);
-        end = convertEndRank(end, zslLength);
+        start = ZSetUtils.convertStartRank(start, zslLength);
+        end = ZSetUtils.convertEndRank(end, zslLength);
 
-        if (isRankRangeEmpty(start, end, zslLength)) {
+        if (ZSetUtils.isRankRangeEmpty(start, end, zslLength)) {
             return new ArrayList<>();
         }
 
@@ -763,32 +693,15 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
     private static class SkipList<S> {
 
         /**
-         * 跳表允许最大层级
-         */
-        private static final int ZSKIPLIST_MAXLEVEL = 32;
-
-        /**
-         * 跳表升层概率
-         */
-        private static final float ZSKIPLIST_P = 0.25f;
-
-        /**
-         * {@link Random}本身是线程安全的，但是多线程使用会产生不必要的竞争，因此创建一个独立的random对象。
-         * - 其实也可以使用{@link ThreadLocalRandom}
-         */
-        private final Random random = new Random();
-        /**
          * 更新节点使用的缓存 - 避免频繁的申请空间
          */
         @SuppressWarnings("unchecked")
         private final SkipListNode<S>[] updateCache = new SkipListNode[ZSKIPLIST_MAXLEVEL];
-        /**
-         * 插入节点的排名缓存
-         */
         private final int[] rankCache = new int[ZSKIPLIST_MAXLEVEL];
 
         private final LongComparator objComparator;
         private final ScoreHandler<S> scoreHandler;
+
         /**
          * 修改次数 - 防止错误的迭代
          */
@@ -848,7 +761,7 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
         @SuppressWarnings("UnusedReturnValue")
         SkipListNode zslInsert(S score, long obj) {
             // 新节点的level
-            final int level = zslRandomLevel();
+            final int level = ZSetUtils.zslRandomLevel();
 
             // update - 需要更新后继节点的Node，新节点各层的前驱节点
             // 1. 分数小的节点
@@ -856,9 +769,6 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
             // rank - 新节点各层前驱的当前排名
             // 这里不必创建一个ZSKIPLIST_MAXLEVEL长度的数组，它取决于插入节点后的新高度，你在别处看见的代码会造成大量的空间浪费，增加GC压力。
             // 如果创建的都是ZSKIPLIST_MAXLEVEL长度的数组，那么应该实现缓存
-//            @SuppressWarnings("unchecked")
-//            final SkipListNode<S>[] update = new SkipListNode[Math.max(level, this.level)];
-//            final int[] rank = new int[update.length];
 
             final SkipListNode<S>[] update = updateCache;
             final int[] rank = rankCache;
@@ -939,8 +849,8 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
 
                 return newNode;
             } finally {
-                releaseUpdate(update, realLength);
-                releaseRank(rank, realLength);
+                ZSetUtils.releaseUpdate(update, realLength);
+                ZSetUtils.releaseRank(rank, realLength);
             }
         }
 
@@ -955,8 +865,6 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
             // update - 需要更新后继节点的Node
             // 1. 分数小的节点
             // 2. 分数相同但id小的节点（分数相同时根据数据排序）
-//            final SkipListNode[] update = new SkipListNode[this.level];
-
             final SkipListNode<S>[] update = updateCache;
             final int realLength = this.level;
             try {
@@ -983,7 +891,7 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
                 /* not found */
                 return false;
             } finally {
-                releaseUpdate(update, realLength);
+                ZSetUtils.releaseUpdate(update, realLength);
             }
         }
 
@@ -1165,7 +1073,6 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
          * @return 删除的节点数量
          */
         int zslDeleteRangeByScore(ZScoreRangeSpec<S> range, Long2ObjectMap<S> dict) {
-//            final SkipListNode[] update = new SkipListNode[this.level];
             final SkipListNode<S>[] update = updateCache;
             final int realLength = this.level;
             try {
@@ -1196,7 +1103,7 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
                 }
                 return removed;
             } finally {
-                releaseUpdate(update, realLength);
+                ZSetUtils.releaseUpdate(update, realLength);
             }
         }
 
@@ -1213,7 +1120,6 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
          * @return 删除的成员数量
          */
         int zslDeleteRangeByRank(int start, int end, Long2ObjectMap<S> dict) {
-//            final SkipListNode[] update = new SkipListNode[this.level];
             final SkipListNode<S>[] update = updateCache;
             final int realLength = this.level;
             try {
@@ -1246,7 +1152,7 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
                 }
                 return removed;
             } finally {
-                releaseUpdate(update, realLength);
+                ZSetUtils.releaseUpdate(update, realLength);
             }
         }
 
@@ -1259,7 +1165,6 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
          * @return 删除的节点
          */
         SkipListNode<S> zslDeleteByRank(int rank, Long2ObjectMap<S> dict) {
-//            final SkipListNode[] update = new SkipListNode[this.level];
             final SkipListNode<S>[] update = updateCache;
             final int realLength = this.level;
             try {
@@ -1285,7 +1190,7 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
                     return null;
                 }
             } finally {
-                releaseUpdate(update, realLength);
+                ZSetUtils.releaseUpdate(update, realLength);
             }
         }
 
@@ -1362,7 +1267,7 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
         /**
          * 创建一个skipList的节点
          *
-         * @param level 节点具有的层级 - {@link #zslRandomLevel()}
+         * @param level 节点的高度
          * @param score 成员分数
          * @param obj   成员id
          * @return node
@@ -1373,26 +1278,6 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
                 node.levelInfo[index] = new SkipListLevel<>();
             }
             return node;
-        }
-
-        /**
-         * 返回一个随机的层级分配给即将插入的节点。
-         * 返回的层级值在 1 和 ZSKIPLIST_MAXLEVEL 之间（包含两者）。
-         * 具有类似幂次定律的分布，越高level返回的可能性更小。
-         * <p>
-         * Returns a random level for the new skiplist node we are going to create.
-         * The return value of this function is between 1 and ZSKIPLIST_MAXLEVEL
-         * (both inclusive), with a powerlaw-alike distribution where higher
-         * levels are less likely to be returned.
-         *
-         * @return level
-         */
-        private int zslRandomLevel() {
-            int level = 1;
-            while (level < ZSKIPLIST_MAXLEVEL && random.nextFloat() < ZSKIPLIST_P) {
-                level++;
-            }
-            return level;
         }
 
         /**
@@ -1511,24 +1396,6 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
          */
         private boolean scoreEquals(S score1, S score2) {
             return compareScore(score1, score2) == 0;
-        }
-
-        /**
-         * 释放update引用的对象
-         */
-        private static <S> void releaseUpdate(SkipListNode<S>[] update, int realLength) {
-            for (int index = 0; index < realLength; index++) {
-                update[index] = null;
-            }
-        }
-
-        /**
-         * 重置rank中的数据
-         */
-        private static void releaseRank(int[] rank, int realLength) {
-            for (int index = 0; index < realLength; index++) {
-                rank[index] = 0;
-            }
         }
 
         /**
