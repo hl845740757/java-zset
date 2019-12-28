@@ -107,7 +107,7 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
     /**
      * 创建一个自定义键类型的zset
      *
-     * @param keyComparator 键比较器，当score比较结果相等时，比较key。
+     * @param keyComparator 键比较器，当score比较结果相等时，比较key - 注意：比较结果必须与key对象的状态改变无关。
      *                      <b>请仔细阅读类文档中的注意事项</b>。
      * @param scoreHandler  分数处理器
      * @param <K>           键的类型
@@ -632,9 +632,7 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
      * @return 分数区间段内的成员数量
      */
     private int zcountInternal(final ZScoreRangeSpec<S> range) {
-        int count = 0;
         final SkipListNode<K, S> firstNodeInRange = zsl.zslFirstInRange(range);
-
         if (firstNodeInRange != null) {
             final int firstNodeRank = zsl.zslGetRank(firstNodeInRange.score, firstNodeInRange.obj);
 
@@ -645,7 +643,7 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
 
             return lastNodeRank - firstNodeRank + 1;
         }
-        return count;
+        return 0;
     }
 
     /**

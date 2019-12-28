@@ -611,9 +611,7 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
      * @return 分数区间段内的成员数量
      */
     private int zcountInternal(final ZScoreRangeSpec<S> range) {
-        int count = 0;
         final SkipListNode<S> firstNodeInRange = zsl.zslFirstInRange(range);
-
         if (firstNodeInRange != null) {
             final int firstNodeRank = zsl.zslGetRank(firstNodeInRange.score, firstNodeInRange.obj);
 
@@ -624,7 +622,7 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
 
             return lastNodeRank - firstNodeRank + 1;
         }
-        return count;
+        return 0;
     }
 
     /**

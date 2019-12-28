@@ -101,7 +101,7 @@ public class Obj2LongZSet<K> implements Iterable<Obj2LongMember<K>> {
     /**
      * 创建一个自定义键类型的zset
      *
-     * @param keyComparator 键比较器，当score比较结果相等时，比较key。
+     * @param keyComparator 键比较器，当score比较结果相等时，比较key - 注意：比较结果必须与key对象的状态改变无关。
      *                      <b>请仔细阅读类文档中的注意事项</b>。
      * @param scoreHandler  score比较器，默认实现见{@link LongScoreHandlers}
      * @param <K>           键的类型
@@ -625,9 +625,7 @@ public class Obj2LongZSet<K> implements Iterable<Obj2LongMember<K>> {
      * @return 分数区间段内的成员数量
      */
     private int zcountInternal(final ZLongScoreRangeSpec range) {
-        int count = 0;
         final SkipListNode<K> firstNodeInRange = zsl.zslFirstInRange(range);
-
         if (firstNodeInRange != null) {
             final int firstNodeRank = zsl.zslGetRank(firstNodeInRange.score, firstNodeInRange.obj);
 
@@ -638,7 +636,7 @@ public class Obj2LongZSet<K> implements Iterable<Obj2LongMember<K>> {
 
             return lastNodeRank - firstNodeRank + 1;
         }
-        return count;
+        return 0;
     }
 
     /**
