@@ -14,26 +14,26 @@
  *  limitations under the License.
  */
 
-package com.wjybxx.zset.obj2long;
+package com.wjybxx.zset.long2object;
 
 /**
  * zset中单个成员信息
  */
-public class Obj2LongMember<K> {
+public class Long2ObjectMember<S> {
 
-    private final K member;
-    private final long score;
+    private final long member;
+    private final S score;
 
-    Obj2LongMember(K member, long score) {
+    Long2ObjectMember(long member, S score) {
         this.member = member;
         this.score = score;
     }
 
-    public K getMember() {
+    public long getMember() {
         return member;
     }
 
-    public long getScore() {
+    public S getScore() {
         return score;
     }
 

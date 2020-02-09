@@ -1,4 +1,4 @@
-package com.wjybxx.zset.long2obj;
+package com.wjybxx.zset.long2object;
 
 import com.wjybxx.zset.generic.ScoreHandler;
 
@@ -6,17 +6,17 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.LongStream;
 
 /**
- * {@link Long2ObjZSet}的测试用例
+ * {@link Long2ObjectZSet}的测试用例
  *
  * @author wjybxx
  * @version 1.0
  * date - 2019/11/9
  * github - https://github.com/hl845740757
  */
-public class Long2ObjZSetTest {
+public class Long2ObjectZSetTest {
 
     public static void main(String[] args) {
-        final Long2ObjZSet<ComplexScore> zSet = Long2ObjZSet.newZSet(new ComplexScoreHandler());
+        final Long2ObjectZSet<ComplexScore> zSet = Long2ObjectZSet.newZSet(new ComplexScoreHandler());
 
         // 插入数据
         LongStream.rangeClosed(1, 10000).forEach(playerId -> {

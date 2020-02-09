@@ -14,7 +14,7 @@
  *  limitations under the License.
  */
 
-package com.wjybxx.zset.long2obj;
+package com.wjybxx.zset.long2object;
 
 
 import com.wjybxx.zset.ZSetUtils;
@@ -43,7 +43,7 @@ import static com.wjybxx.zset.ZSetUtils.ZSKIPLIST_MAXLEVEL;
  * <b>NOTE</b>：
  * 1. ZSET中的排名从0开始（提供给用户的接口，排名都从0开始）
  * <p>
- * 2. 我们允许zset中的成员是降序排列的{@link ScoreHandler}决定，可以更好的支持根据score降序的排行榜，
+ * 2. 我们允许zset中的成员是降序排列的-{@link ScoreHandler}决定，可以更好的支持根据score降序的排行榜，
  * 而不是强迫你总是调用反转系列接口{@code zrev...}，那样的设计不符合人的正常思维，就很容易出错。
  * <p>
  * 3. 我们修改了redis中根据min和max查找和删除成员的接口，修改为start和end，当根据score范围查找或删除元素时，并不要求start小于等于end，我们会处理它们的大小关系。<br>
@@ -62,7 +62,7 @@ import static com.wjybxx.zset.ZSetUtils.ZSKIPLIST_MAXLEVEL;
  * date - 2019/11/4
  */
 @NotThreadSafe
-public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
+public class Long2ObjectZSet<S> implements Iterable<Long2ObjectMember<S>> {
 
     /**
      * member -> score
@@ -70,7 +70,7 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
     private final Long2ObjectMap<S> dict = new Long2ObjectOpenHashMap<>(ZSetUtils.INIT_CAPACITY);
     private final SkipList<S> zsl;
 
-    private Long2ObjZSet(LongComparator objComparator, ScoreHandler<S> scoreHandler) {
+    private Long2ObjectZSet(LongComparator objComparator, ScoreHandler<S> scoreHandler) {
         this.zsl = new SkipList<>(objComparator, scoreHandler);
     }
 
@@ -81,8 +81,8 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
      * @param <S>          score类型
      * @return zset
      */
-    public static <S> Long2ObjZSet<S> newZSet(ScoreHandler<S> scoreHandler) {
-        return new Long2ObjZSet<>(LongComparators.NATURAL_COMPARATOR, scoreHandler);
+    public static <S> Long2ObjectZSet<S> newZSet(ScoreHandler<S> scoreHandler) {
+        return new Long2ObjectZSet<>(LongComparators.NATURAL_COMPARATOR, scoreHandler);
     }
 
     /**
@@ -93,8 +93,8 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
      * @param <S>           score的类型
      * @return zset
      */
-    public static <S> Long2ObjZSet<S> newZSet(LongComparator objComparator, ScoreHandler<S> scoreHandler) {
-        return new Long2ObjZSet<>(objComparator, scoreHandler);
+    public static <S> Long2ObjectZSet<S> newZSet(LongComparator objComparator, ScoreHandler<S> scoreHandler) {
+        return new Long2ObjectZSet<>(objComparator, scoreHandler);
     }
     // -------------------------------------------------------- insert -----------------------------------------------
 
@@ -226,7 +226,7 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
      * @return 如果不存在，则返回null
      */
     @Nullable
-    public Long2ObjMember<S> zpopFirst() {
+    public Long2ObjectMember<S> zpopFirst() {
         return zremByRank(0);
     }
 
@@ -237,7 +237,7 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
      * @return 如果不存在，则返回null
      */
     @Nullable
-    public Long2ObjMember<S> zpopLast() {
+    public Long2ObjectMember<S> zpopLast() {
         return zremByRank(zsl.length() - 1);
     }
 
@@ -248,13 +248,13 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
      * @return 删除成功则返回该排名对应的数据，否则返回null
      */
     @Nullable
-    public Long2ObjMember<S> zremByRank(int rank) {
+    public Long2ObjectMember<S> zremByRank(int rank) {
         if (rank < 0 || rank >= zsl.length()) {
             return null;
         }
         final SkipListNode<S> delete = zsl.zslDeleteByRank(rank + 1, dict);
         assert null != delete;
-        return new Long2ObjMember<>(delete.obj, delete.score);
+        return new Long2ObjectMember<>(delete.obj, delete.score);
     }
 
     /**
@@ -372,13 +372,13 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
      * @param rank 排名 0-based
      * @return memver，如果不存在，则返回null
      */
-    public Long2ObjMember<S> zmemberByRank(int rank) {
+    public Long2ObjectMember<S> zmemberByRank(int rank) {
         if (rank < 0 || rank >= zsl.length()) {
             return null;
         }
         final SkipListNode<S> node = zsl.zslGetElementByRank(rank + 1);
         assert null != node;
-        return new Long2ObjMember<>(node.obj, node.score);
+        return new Long2ObjectMember<>(node.obj, node.score);
     }
 
     /**
@@ -387,13 +387,13 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
      * @param rank 排名 0-based
      * @return memver，如果不存在，则返回null
      */
-    public Long2ObjMember<S> zrevmemberByRank(int rank) {
+    public Long2ObjectMember<S> zrevmemberByRank(int rank) {
         if (rank < 0 || rank >= zsl.length()) {
             return null;
         }
         final SkipListNode<S> node = zsl.zslGetElementByRank(zsl.length() - rank);
         assert null != node;
-        return new Long2ObjMember<>(node.obj, node.score);
+        return new Long2ObjectMember<>(node.obj, node.score);
     }
 
     // region 通过分数查询
@@ -405,7 +405,7 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
      * @param end   截止分数 inclusive
      * @return memberInfo
      */
-    public List<Long2ObjMember<S>> zrangeByScore(S start, S end) {
+    public List<Long2ObjectMember<S>> zrangeByScore(S start, S end) {
         return zrangeByScoreWithOptions(zsl.newRangeSpec(start, end), 0, -1, false);
     }
 
@@ -415,7 +415,7 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
      * @param spec 范围描述信息
      * @return memberInfo
      */
-    public List<Long2ObjMember<S>> zrangeByScore(ScoreRangeSpec<S> spec) {
+    public List<Long2ObjectMember<S>> zrangeByScore(ScoreRangeSpec<S> spec) {
         return zrangeByScoreWithOptions(zsl.newRangeSpec(spec), 0, -1, false);
     }
 
@@ -426,7 +426,7 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
      * @param end   截止分数 inclusive
      * @return memberInfo
      */
-    public List<Long2ObjMember<S>> zrevrangeByScore(final S start, final S end) {
+    public List<Long2ObjectMember<S>> zrevrangeByScore(final S start, final S end) {
         return zrangeByScoreWithOptions(zsl.newRangeSpec(start, end), 0, -1, true);
     }
 
@@ -436,7 +436,7 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
      * @param rangeSpec score范围区间
      * @return 删除的成员数目
      */
-    public List<Long2ObjMember<S>> zrevrangeByScore(ScoreRangeSpec<S> rangeSpec) {
+    public List<Long2ObjectMember<S>> zrevrangeByScore(ScoreRangeSpec<S> rangeSpec) {
         return zrangeByScoreWithOptions(zsl.newRangeSpec(rangeSpec), 0, -1, true);
     }
 
@@ -449,7 +449,7 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
      * @param reverse   是否逆序
      * @return memberInfo
      */
-    public List<Long2ObjMember<S>> zrangeByScoreWithOptions(final ScoreRangeSpec<S> rangeSpec, int offset, int limit, boolean reverse) {
+    public List<Long2ObjectMember<S>> zrangeByScoreWithOptions(final ScoreRangeSpec<S> rangeSpec, int offset, int limit, boolean reverse) {
         return zrangeByScoreWithOptions(zsl.newRangeSpec(rangeSpec), offset, limit, reverse);
     }
 
@@ -462,7 +462,7 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
      * @param reverse 是否逆序
      * @return memberInfo
      */
-    private List<Long2ObjMember<S>> zrangeByScoreWithOptions(final ZScoreRangeSpec<S> range, int offset, int limit, boolean reverse) {
+    private List<Long2ObjectMember<S>> zrangeByScoreWithOptions(final ZScoreRangeSpec<S> range, int offset, int limit, boolean reverse) {
         if (offset < 0) {
             throw new IllegalArgumentException("offset" + ": " + offset + " (expected: >= 0)");
         }
@@ -490,7 +490,7 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
             }
         }
 
-        final List<Long2ObjMember<S>> result = new ArrayList<>();
+        final List<Long2ObjectMember<S>> result = new ArrayList<>();
 
         /* 这里使用 != 0 判断，当limit小于0时，表示不限制 */
         while (listNode != null && limit-- != 0) {
@@ -505,7 +505,7 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
                 }
             }
 
-            result.add(new Long2ObjMember<>(listNode.obj, listNode.score));
+            result.add(new Long2ObjectMember<>(listNode.obj, listNode.score));
 
             /* Move to next node */
             if (reverse) {
@@ -527,7 +527,7 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
      * @param end   截止排名(0-based) inclusive
      * @return memberInfo
      */
-    public List<Long2ObjMember<S>> zrangeByRank(int start, int end) {
+    public List<Long2ObjectMember<S>> zrangeByRank(int start, int end) {
         return zrangeByRankInternal(start, end, false);
     }
 
@@ -538,7 +538,7 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
      * @param end   截止排名(0-based) inclusive
      * @return memberInfo
      */
-    public List<Long2ObjMember<S>> zrevrangeByRank(int start, int end) {
+    public List<Long2ObjectMember<S>> zrevrangeByRank(int start, int end) {
         return zrangeByRankInternal(start, end, true);
     }
 
@@ -550,7 +550,7 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
      * @param reverse 是否逆序返回
      * @return memberInfo
      */
-    private List<Long2ObjMember<S>> zrangeByRankInternal(int start, int end, boolean reverse) {
+    private List<Long2ObjectMember<S>> zrangeByRankInternal(int start, int end, boolean reverse) {
         final int zslLength = zsl.length();
 
         start = ZSetUtils.convertStartRank(start, zslLength);
@@ -572,9 +572,9 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
             listNode = start > 0 ? zsl.zslGetElementByRank(start + 1) : zsl.header.levelInfo[0].forward;
         }
 
-        final List<Long2ObjMember<S>> result = new ArrayList<>(rangeLen);
+        final List<Long2ObjectMember<S>> result = new ArrayList<>(rangeLen);
         while (rangeLen-- > 0 && listNode != null) {
-            result.add(new Long2ObjMember<>(listNode.obj, listNode.score));
+            result.add(new Long2ObjectMember<>(listNode.obj, listNode.score));
             listNode = reverse ? listNode.backward : listNode.levelInfo[0].forward;
         }
         return result;
@@ -642,7 +642,7 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
      * @return iterator
      */
     @Nonnull
-    public Iterator<Long2ObjMember<S>> zscan() {
+    public Iterator<Long2ObjectMember<S>> zscan() {
         return zscan(0);
     }
 
@@ -653,7 +653,7 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
      * @return iterator
      */
     @Nonnull
-    public Iterator<Long2ObjMember<S>> zscan(int offset) {
+    public Iterator<Long2ObjectMember<S>> zscan(int offset) {
         if (offset <= 0) {
             return new ZSetItr(zsl.header.directForward());
         }
@@ -667,7 +667,7 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
 
     @Nonnull
     @Override
-    public Iterator<Long2ObjMember<S>> iterator() {
+    public Iterator<Long2ObjectMember<S>> iterator() {
         return zscan(0);
     }
     // endregion
@@ -1484,7 +1484,7 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
      * Q: 为什么不写在{@link SkipList}中？
      * A: 因为删除数据需要访问{@link #dict}。
      */
-    private class ZSetItr implements Iterator<Long2ObjMember<S>> {
+    private class ZSetItr implements Iterator<Long2ObjectMember<S>> {
 
         private SkipListNode<S> lastReturned;
         private SkipListNode<S> next;
@@ -1498,7 +1498,7 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
             return next != null;
         }
 
-        public Long2ObjMember<S> next() {
+        public Long2ObjectMember<S> next() {
             checkForComodification();
 
             if (next == null) {
@@ -1508,7 +1508,7 @@ public class Long2ObjZSet<S> implements Iterable<Long2ObjMember<S>> {
             lastReturned = next;
             next = next.directForward();
 
-            return new Long2ObjMember<>(lastReturned.obj, lastReturned.score);
+            return new Long2ObjectMember<>(lastReturned.obj, lastReturned.score);
         }
 
         public void remove() {

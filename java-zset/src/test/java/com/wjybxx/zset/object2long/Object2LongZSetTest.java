@@ -1,10 +1,10 @@
-package com.wjybxx.zset.obj2long;
+package com.wjybxx.zset.object2long;
 
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.LongStream;
 
 /**
- * {@link Obj2LongZSet}的复杂score测试
+ * {@link Object2LongZSet}的复杂score测试
  * 这里的score由vipLevel和level拼接而成，因此在比较时需要拆分。
  *
  * @author wjybxx
@@ -12,12 +12,12 @@ import java.util.stream.LongStream;
  * date - 2019/11/7
  * github - https://github.com/hl845740757
  */
-public class Obj2LongZSetTest {
+public class Object2LongZSetTest {
 
     private static final long MULTIPLE = 10000;
 
     public static void main(String[] args) {
-        final Obj2LongZSet<Long> zSet = Obj2LongZSet.newLongKeyZSet(new ComplexScoreHandler());
+        final Object2LongZSet<Long> zSet = Object2LongZSet.newLongKeyZSet(new ComplexScoreHandler());
 
         // 插入数据
         LongStream.rangeClosed(1, 10000).forEach(playerId -> {

@@ -14,7 +14,7 @@
  *  limitations under the License.
  */
 
-package com.wjybxx.zset.obj2long;
+package com.wjybxx.zset.object2long;
 
 /**
  * Score范围区间

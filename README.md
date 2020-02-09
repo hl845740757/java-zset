@@ -1,5 +1,7 @@
 # java-zset
-redis的zset的java实现，包含3个版本，Long2ObjZset, Obj2LongZset, GenericZSet。GenericZSet是基准实现，Long2ObjZset, Obj2LongZset是GenericZSet特化实现，以减少大量的拆装箱。  
+redis的zset的java实现，包含3个版本，Long2ObjectZset, Object2LongZset, GenericZSet。  
+GenericZSet是基准实现，Long2ObjectZset, Object2LongZset是GenericZSet特化实现，以减少大量的拆装箱。  
+
 java-zser实现了redis zset中的常用命令，且结合java语言自身的特性，进行了大量优化，包括：   
 1. score不再限定为double类型，支持泛型score。
 2. 可自定义ScoreComparator, KeyComparator，使得实现逆序排行榜更加容易，而不是让你总是使用reverse系列接口。

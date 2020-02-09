@@ -1,7 +1,7 @@
-package com.wjybxx.zset.obj2long;
+package com.wjybxx.zset.object2long;
 
 /**
- * {@link Obj2LongZSet}中“score”范围描述信息 - specification模式
+ * {@link Object2LongZSet}中“score”范围描述信息 - specification模式
  */
 public final class ZLongScoreRangeSpec {
     /**

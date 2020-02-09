@@ -37,9 +37,9 @@ import static com.wjybxx.zset.ZSetUtils.ZSKIPLIST_MAXLEVEL;
  * 1. ZSET中的排名从0开始（提供给用户的接口，排名都从0开始）
  * 2. ZSET使用键的<b>compare</b>结果判断两个键是否相等，而不是equals方法，因此必须保证键不同时compare结果一定不为0。
  * 3. 又由于key需要存放于{@link HashMap}中，因此“相同”的key必须有相同的hashCode，且equals方法返回true。
- * <b>手动加粗:key的关键属性最好是number或string</b>
+ * <b>手动加粗:key的关键属性最好是number或string且是final的</b>
  * <p>
- * 4. 我们允许zset中的成员是降序排列的{@link ScoreHandler}决定，可以更好的支持根据score降序的排行榜，
+ * 4. 我们允许zset中的成员是降序排列的-{@link ScoreHandler}决定，可以更好的支持根据score降序的排行榜，
  * 而不是强迫你总是调用反转系列接口{@code zrev...}，那样的设计不符合人的正常思维，就很容易出错。
  * <p>
  * 5. 我们修改了redis中根据min和max查找和删除成员的接口，修改为start和end，当根据score范围查找或删除元素时，并不要求start小于等于end，我们会处理它们的大小关系。<br>
