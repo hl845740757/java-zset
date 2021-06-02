@@ -1452,7 +1452,7 @@ public class Long2ObjectZSet<S> implements Iterable<Long2ObjectMember<S>> {
     /**
      * 跳表节点
      */
-    private static class SkipListNode<S> {
+    private static class SkipListNode<S> implements Long2ObjectMember<S> {
         /**
          * 节点对应的数据id
          */
@@ -1486,6 +1486,16 @@ public class Long2ObjectZSet<S> implements Iterable<Long2ObjectMember<S>> {
          */
         SkipListNode<S> directForward() {
             return levelInfo[0].forward;
+        }
+
+        @Override
+        public long getLongMember() {
+            return obj;
+        }
+
+        @Override
+        public S getScore() {
+            return score;
         }
     }
 
@@ -1566,46 +1576,25 @@ public class Long2ObjectZSet<S> implements Iterable<Long2ObjectMember<S>> {
 
     private class FastZSetItr extends ZSetItr {
 
-        final ZSetMember<S> member = new ZSetMember<>();
-
         FastZSetItr(SkipListNode<S> next) {
             super(next);
         }
 
         @Override
         protected Long2ObjectMember<S> nextMember(SkipListNode<S> lastReturned) {
-            member.init(lastReturned.obj, lastReturned.score);
-            return member;
+            return lastReturned;
         }
 
-        @Override
-        public void remove() {
-            super.remove();
-            this.member.clear();
-        }
     }
 
     public static class ZSetMember<S> implements Long2ObjectMember<S> {
 
-        private long member;
-        private S score;
-
-        ZSetMember() {
-        }
+        private final long member;
+        private final S score;
 
         ZSetMember(long member, S score) {
             this.member = member;
             this.score = score;
-        }
-
-        void init(long member, S score) {
-            this.member = member;
-            this.score = score;
-        }
-
-        void clear() {
-            this.member = 0;
-            this.score = null;
         }
 
         @Override

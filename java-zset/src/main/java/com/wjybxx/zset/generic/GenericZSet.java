@@ -1471,7 +1471,7 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
     /**
      * 跳表节点
      */
-    private static class SkipListNode<K, S> {
+    private static class SkipListNode<K, S> implements Member<K, S> {
         /**
          * 节点对应的数据id
          */
@@ -1505,6 +1505,16 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
          */
         SkipListNode<K, S> directForward() {
             return levelInfo[0].forward;
+        }
+
+        @Override
+        public K getMember() {
+            return obj;
+        }
+
+        @Override
+        public S getScore() {
+            return score;
         }
     }
 
@@ -1585,47 +1595,25 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
 
     private class FastZSetItr extends ZSetItr {
 
-        final ZSetMember<K, S> member = new ZSetMember<>();
-
         FastZSetItr(SkipListNode<K, S> next) {
             super(next);
         }
 
         @Override
         protected Member<K, S> nextMember(SkipListNode<K, S> lastReturned) {
-            member.init(lastReturned.obj, lastReturned.score);
-            return member;
+            return lastReturned;
         }
 
-        @Override
-        public void remove() {
-            super.remove();
-            this.member.clear();
-        }
     }
 
     private static class ZSetMember<K, S> implements Member<K, S> {
 
-        private K member;
-        private S score;
-
-        ZSetMember() {
-
-        }
+        private final K member;
+        private final S score;
 
         ZSetMember(K member, S score) {
             this.member = member;
             this.score = score;
-        }
-
-        void init(K member, S score) {
-            this.member = member;
-            this.score = score;
-        }
-
-        void clear() {
-            this.member = null;
-            this.score = null;
         }
 
         @Override
