@@ -7,6 +7,9 @@ java-zser实现了redis zset中的常用命令，且结合java语言自身的特
 2. 可自定义ScoreComparator, KeyComparator，使得实现逆序排行榜更加容易，而不是让你总是使用reverse系列接口。
 此外，扩展zset较为容易，你可以在理解后自行添加需要的特性。
 
+#### 1.3 fastItr
+使用普通迭代器和普通zscan时，你可以保留返回的member对象，这些对象是新的不会被复用的；但使用快速迭代器时，你不可以保留返回的member对象的引用。
+
 #### 主要参考
  * [redis 源码](https://github.com/antirez/redis)
  * [lua 版zset实现](https://github.com/XanthusL/zset)
