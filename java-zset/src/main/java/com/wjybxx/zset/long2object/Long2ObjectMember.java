@@ -16,32 +16,22 @@
 
 package com.wjybxx.zset.long2object;
 
+import com.wjybxx.zset.generic.Member;
+
 /**
  * zset中单个成员信息
  */
-public class Long2ObjectMember<S> {
+public interface Long2ObjectMember<S> extends Member<Long, S> {
 
-    private final long member;
-    private final S score;
-
-    Long2ObjectMember(long member, S score) {
-        this.member = member;
-        this.score = score;
+    @Deprecated
+    @Override
+    default Long getMember() {
+        return getLongMember();
     }
 
-    public long getMember() {
-        return member;
-    }
-
-    public S getScore() {
-        return score;
-    }
+    long getLongMember();
 
     @Override
-    public String toString() {
-        return "{" +
-                "member=" + member +
-                ", score=" + score +
-                '}';
-    }
+    S getScore();
+
 }

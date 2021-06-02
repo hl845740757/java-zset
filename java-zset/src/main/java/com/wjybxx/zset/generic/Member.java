@@ -19,29 +19,10 @@ package com.wjybxx.zset.generic;
 /**
  * zset中单个成员信息
  */
-public class Member<K, S> {
+public interface Member<K, S> {
 
-    private final K member;
-    private final S score;
+    K getMember();
 
-    Member(K member, S score) {
-        this.member = member;
-        this.score = score;
-    }
+    S getScore();
 
-    public K getMember() {
-        return member;
-    }
-
-    public S getScore() {
-        return score;
-    }
-
-    @Override
-    public String toString() {
-        return "{" +
-                "member=" + member +
-                ", score=" + score +
-                '}';
-    }
 }
