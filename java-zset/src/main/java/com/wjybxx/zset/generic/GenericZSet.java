@@ -59,7 +59,7 @@ import static com.wjybxx.zset.ZSetUtils.ZSKIPLIST_MAXLEVEL;
  * date - 2019/11/4
  */
 @NotThreadSafe
-public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
+public class GenericZSet<K, S> implements Iterable<Entry<K, S>> {
 
     /**
      * member -> score
@@ -247,7 +247,7 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
      * @return 如果不存在，则返回null
      */
     @Nullable
-    public Member<K, S> zpopFirst() {
+    public Entry<K, S> zpopFirst() {
         return zremByRank(0);
     }
 
@@ -258,7 +258,7 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
      * @return 如果不存在，则返回null
      */
     @Nullable
-    public Member<K, S> zpopLast() {
+    public Entry<K, S> zpopLast() {
         return zremByRank(zsl.length() - 1);
     }
 
@@ -269,13 +269,13 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
      * @return 删除成功则返回该排名对应的数据，否则返回null
      */
     @Nullable
-    public Member<K, S> zremByRank(int rank) {
+    public Entry<K, S> zremByRank(int rank) {
         if (rank < 0 || rank >= zsl.length()) {
             return null;
         }
         final SkipListNode<K, S> delete = zsl.zslDeleteByRank(rank + 1, dict);
         assert null != delete;
-        return new ZSetMember<>(delete.obj, delete.score);
+        return new ZSetEntry<>(delete.obj, delete.score);
     }
 
     /**
@@ -393,13 +393,13 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
      * @param rank 排名 0-based
      * @return memver，如果不存在，则返回null
      */
-    public Member<K, S> zmemberByRank(int rank) {
+    public Entry<K, S> zmemberByRank(int rank) {
         if (rank < 0 || rank >= zsl.length()) {
             return null;
         }
         final SkipListNode<K, S> node = zsl.zslGetElementByRank(rank + 1);
         assert null != node;
-        return new ZSetMember<>(node.obj, node.score);
+        return new ZSetEntry<>(node.obj, node.score);
     }
 
     /**
@@ -408,13 +408,13 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
      * @param rank 排名 0-based
      * @return memver，如果不存在，则返回null
      */
-    public Member<K, S> zrevmemberByRank(int rank) {
+    public Entry<K, S> zrevmemberByRank(int rank) {
         if (rank < 0 || rank >= zsl.length()) {
             return null;
         }
         final SkipListNode<K, S> node = zsl.zslGetElementByRank(zsl.length() - rank);
         assert null != node;
-        return new ZSetMember<>(node.obj, node.score);
+        return new ZSetEntry<>(node.obj, node.score);
     }
 
     // region 通过分数查询
@@ -426,7 +426,7 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
      * @param end   截止分数 inclusive
      * @return memberInfo
      */
-    public List<Member<K, S>> zrangeByScore(S start, S end) {
+    public List<Entry<K, S>> zrangeByScore(S start, S end) {
         return zrangeByScoreWithOptions(zsl.newRangeSpec(start, end), 0, -1, false);
     }
 
@@ -436,7 +436,7 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
      * @param spec 范围描述信息
      * @return memberInfo
      */
-    public List<Member<K, S>> zrangeByScore(ScoreRangeSpec<S> spec) {
+    public List<Entry<K, S>> zrangeByScore(ScoreRangeSpec<S> spec) {
         return zrangeByScoreWithOptions(zsl.newRangeSpec(spec), 0, -1, false);
     }
 
@@ -447,7 +447,7 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
      * @param end   截止分数 inclusive
      * @return memberInfo
      */
-    public List<Member<K, S>> zrevrangeByScore(final S start, final S end) {
+    public List<Entry<K, S>> zrevrangeByScore(final S start, final S end) {
         return zrangeByScoreWithOptions(zsl.newRangeSpec(start, end), 0, -1, true);
     }
 
@@ -457,7 +457,7 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
      * @param rangeSpec score范围区间
      * @return 删除的成员数目
      */
-    public List<Member<K, S>> zrevrangeByScore(ScoreRangeSpec<S> rangeSpec) {
+    public List<Entry<K, S>> zrevrangeByScore(ScoreRangeSpec<S> rangeSpec) {
         return zrangeByScoreWithOptions(zsl.newRangeSpec(rangeSpec), 0, -1, true);
     }
 
@@ -470,7 +470,7 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
      * @param reverse   是否逆序
      * @return memberInfo
      */
-    public List<Member<K, S>> zrangeByScoreWithOptions(final ScoreRangeSpec<S> rangeSpec, int offset, int limit, boolean reverse) {
+    public List<Entry<K, S>> zrangeByScoreWithOptions(final ScoreRangeSpec<S> rangeSpec, int offset, int limit, boolean reverse) {
         return zrangeByScoreWithOptions(zsl.newRangeSpec(rangeSpec), offset, limit, reverse);
     }
 
@@ -483,7 +483,7 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
      * @param reverse 是否逆序
      * @return memberInfo
      */
-    private List<Member<K, S>> zrangeByScoreWithOptions(final ZScoreRangeSpec<S> range, int offset, int limit, boolean reverse) {
+    private List<Entry<K, S>> zrangeByScoreWithOptions(final ZScoreRangeSpec<S> range, int offset, int limit, boolean reverse) {
         if (offset < 0) {
             throw new IllegalArgumentException("offset" + ": " + offset + " (expected: >= 0)");
         }
@@ -511,7 +511,7 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
             }
         }
 
-        final List<Member<K, S>> result = new ArrayList<>();
+        final List<Entry<K, S>> result = new ArrayList<>();
 
         /* 这里使用 != 0 判断，当limit小于0时，表示不限制 */
         while (listNode != null && limit-- != 0) {
@@ -526,7 +526,7 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
                 }
             }
 
-            result.add(new ZSetMember<>(listNode.obj, listNode.score));
+            result.add(new ZSetEntry<>(listNode.obj, listNode.score));
 
             /* Move to next node */
             if (reverse) {
@@ -548,7 +548,7 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
      * @param end   截止排名(0-based) inclusive
      * @return memberInfo
      */
-    public List<Member<K, S>> zrangeByRank(int start, int end) {
+    public List<Entry<K, S>> zrangeByRank(int start, int end) {
         return zrangeByRankInternal(start, end, false);
     }
 
@@ -559,7 +559,7 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
      * @param end   截止排名(0-based) inclusive
      * @return memberInfo
      */
-    public List<Member<K, S>> zrevrangeByRank(int start, int end) {
+    public List<Entry<K, S>> zrevrangeByRank(int start, int end) {
         return zrangeByRankInternal(start, end, true);
     }
 
@@ -571,7 +571,7 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
      * @param reverse 是否逆序返回
      * @return memberInfo
      */
-    private List<Member<K, S>> zrangeByRankInternal(int start, int end, boolean reverse) {
+    private List<Entry<K, S>> zrangeByRankInternal(int start, int end, boolean reverse) {
         final int zslLength = zsl.length();
 
         start = ZSetUtils.convertStartRank(start, zslLength);
@@ -593,9 +593,9 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
             listNode = start > 0 ? zsl.zslGetElementByRank(start + 1) : zsl.header.levelInfo[0].forward;
         }
 
-        final List<Member<K, S>> result = new ArrayList<>(rangeLen);
+        final List<Entry<K, S>> result = new ArrayList<>(rangeLen);
         while (rangeLen-- > 0 && listNode != null) {
-            result.add(new ZSetMember<>(listNode.obj, listNode.score));
+            result.add(new ZSetEntry<>(listNode.obj, listNode.score));
             listNode = reverse ? listNode.backward : listNode.levelInfo[0].forward;
         }
         return result;
@@ -663,7 +663,7 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
      * @return iterator
      */
     @Nonnull
-    public Iterator<Member<K, S>> zscan() {
+    public Iterator<Entry<K, S>> zscan() {
         return zscan(0);
     }
 
@@ -674,7 +674,7 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
      * @return iterator
      */
     @Nonnull
-    public Iterator<Member<K, S>> zscan(int offset) {
+    public Iterator<Entry<K, S>> zscan(int offset) {
         if (offset <= 0) {
             return new ZSetItr(zsl.header.directForward());
         }
@@ -688,16 +688,16 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
 
     @Nonnull
     @Override
-    public Iterator<Member<K, S>> iterator() {
+    public Iterator<Entry<K, S>> iterator() {
         return zscan(0);
     }
 
     /**
-     * {@link Iterator#next()}总是返回相同的{@link Member}对象，外部在迭代时不可以保持其引用。
-     * 改迭代器是为了避免创建大量的{@link Member}对象。
+     * {@link Iterator#next()}总是返回相同的{@link Entry}对象，外部在迭代时不可以保持其引用。
+     * 改迭代器是为了避免创建大量的{@link Entry}对象。
      */
     @Nonnull
-    public Iterator<Member<K, S>> fastzscan(int offset) {
+    public Iterator<Entry<K, S>> fastzscan(int offset) {
         if (offset <= 0) {
             return new FastZSetItr(zsl.header.directForward());
         }
@@ -710,11 +710,11 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
     }
 
     /**
-     * {@link Iterator#next()}总是返回相同的{@link Member}对象，外部在迭代时不可以保持其引用。
-     * 改迭代器是为了避免创建大量的{@link Member}对象。
+     * {@link Iterator#next()}总是返回相同的{@link Entry}对象，外部在迭代时不可以保持其引用。
+     * 改迭代器是为了避免创建大量的{@link Entry}对象。
      */
     @Nonnull
-    public Iterator<Member<K, S>> fastIterator() {
+    public Iterator<Entry<K, S>> fastIterator() {
         return fastzscan(0);
     }
     // endregion
@@ -1471,7 +1471,7 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
     /**
      * 跳表节点
      */
-    private static class SkipListNode<K, S> implements Member<K, S> {
+    private static class SkipListNode<K, S> implements Entry<K, S> {
         /**
          * 节点对应的数据id
          */
@@ -1540,7 +1540,7 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
      * Q: 为什么不写在{@link SkipList}中？
      * A: 因为删除数据需要访问{@link #dict}。
      */
-    private class ZSetItr implements Iterator<Member<K, S>> {
+    private class ZSetItr implements Iterator<Entry<K, S>> {
 
         private SkipListNode<K, S> lastReturned;
         private SkipListNode<K, S> next;
@@ -1554,7 +1554,7 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
             return next != null;
         }
 
-        public Member<K, S> next() {
+        public Entry<K, S> next() {
             checkForComodification();
 
             if (next == null) {
@@ -1567,8 +1567,8 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
             return nextMember(lastReturned);
         }
 
-        protected Member<K, S> nextMember(SkipListNode<K, S> lastReturned) {
-            return new ZSetMember<>(lastReturned.obj, lastReturned.score);
+        protected Entry<K, S> nextMember(SkipListNode<K, S> lastReturned) {
+            return new ZSetEntry<>(lastReturned.obj, lastReturned.score);
         }
 
         public void remove() {
@@ -1600,18 +1600,18 @@ public class GenericZSet<K, S> implements Iterable<Member<K, S>> {
         }
 
         @Override
-        protected Member<K, S> nextMember(SkipListNode<K, S> lastReturned) {
+        protected Entry<K, S> nextMember(SkipListNode<K, S> lastReturned) {
             return lastReturned;
         }
 
     }
 
-    private static class ZSetMember<K, S> implements Member<K, S> {
+    private static class ZSetEntry<K, S> implements Entry<K, S> {
 
         private final K member;
         private final S score;
 
-        ZSetMember(K member, S score) {
+        ZSetEntry(K member, S score) {
             this.member = member;
             this.score = score;
         }

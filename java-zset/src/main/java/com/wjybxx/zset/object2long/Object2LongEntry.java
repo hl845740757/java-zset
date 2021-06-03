@@ -16,9 +16,9 @@
 
 package com.wjybxx.zset.object2long;
 
-import com.wjybxx.zset.generic.Member;
+import com.wjybxx.zset.generic.Entry;
 
-public interface Object2LongMember<K> extends Member<K, Long> {
+public interface Object2LongEntry<K> extends Entry<K, Long> {
 
     @Override
     K getMember();

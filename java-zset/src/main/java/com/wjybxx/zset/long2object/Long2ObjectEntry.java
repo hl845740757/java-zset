@@ -14,15 +14,24 @@
  *  limitations under the License.
  */
 
-package com.wjybxx.zset.generic;
+package com.wjybxx.zset.long2object;
+
+import com.wjybxx.zset.generic.Entry;
 
 /**
  * zset中单个成员信息
  */
-public interface Member<K, S> {
+public interface Long2ObjectEntry<S> extends Entry<Long, S> {
 
-    K getMember();
+    @Deprecated
+    @Override
+    default Long getMember() {
+        return getLongMember();
+    }
 
+    long getLongMember();
+
+    @Override
     S getScore();
 
 }
