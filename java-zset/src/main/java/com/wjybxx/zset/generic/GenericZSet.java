@@ -127,6 +127,8 @@ public class GenericZSet<K, S> implements Iterable<Entry<K, S>> {
      * @param member 成员id
      */
     public void zadd(final S score, @Nonnull final K member) {
+        Objects.requireNonNull(score);
+        Objects.requireNonNull(member);
         final S oldScore = dict.put(member, score);
         if (oldScore != null) {
             // Q: 为何不再判断分数相等？
@@ -144,6 +146,8 @@ public class GenericZSet<K, S> implements Iterable<Entry<K, S>> {
      * @return 添加成功则返回true，否则返回false。
      */
     public boolean zaddnx(final S score, @Nonnull final K member) {
+        Objects.requireNonNull(score);
+        Objects.requireNonNull(member);
         final S oldScore = dict.putIfAbsent(member, score);
         if (oldScore == null) {
             zsl.zslInsert(score, member);
@@ -161,6 +165,8 @@ public class GenericZSet<K, S> implements Iterable<Entry<K, S>> {
      * @return 更新后的值
      */
     public S zincrby(S increment, @Nonnull K member) {
+        Objects.requireNonNull(increment);
+        Objects.requireNonNull(member);
         final S oldScore = dict.get(member);
         final S score = oldScore == null ? increment : zsl.sum(oldScore, increment);
         zadd(score, member);
@@ -176,6 +182,8 @@ public class GenericZSet<K, S> implements Iterable<Entry<K, S>> {
      * @return 更新后的值，如果更新失败，则返回null。
      */
     public S zincrbyxx(S increment, @Nonnull K member) {
+        Objects.requireNonNull(increment);
+        Objects.requireNonNull(member);
         final S oldScore = dict.get(member);
         if (oldScore == null) {
             return null;
@@ -195,6 +203,7 @@ public class GenericZSet<K, S> implements Iterable<Entry<K, S>> {
      * @return 如果成员存在，则返回对应的score，否则返回null。
      */
     public S zrem(@Nonnull K member) {
+        Objects.requireNonNull(member);
         final S oldScore = dict.remove(member);
         if (oldScore != null) {
             zsl.zslDelete(oldScore, member);
@@ -346,6 +355,7 @@ public class GenericZSet<K, S> implements Iterable<Entry<K, S>> {
      * @return score
      */
     public S zscore(@Nonnull K member) {
+        Objects.requireNonNull(member);
         return dict.get(member);
     }
 
@@ -360,6 +370,7 @@ public class GenericZSet<K, S> implements Iterable<Entry<K, S>> {
      * @return 如果存在该成员，则返回该成员的排名(0-based)，否则返回-1
      */
     public int zrank(@Nonnull K member) {
+        Objects.requireNonNull(member);
         final S score = dict.get(member);
         if (score == null) {
             return -1;

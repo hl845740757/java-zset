@@ -121,6 +121,7 @@ public class Object2LongZSet<K> implements Iterable<Object2LongEntry<K>> {
      * @param member 成员id
      */
     public void zadd(final long score, @Nonnull final K member) {
+        Objects.requireNonNull(member);
         final Long oldScore = dict.put(member, score);
         if (oldScore != null) {
             // Q: 为何不再判断分数相等？
@@ -138,6 +139,7 @@ public class Object2LongZSet<K> implements Iterable<Object2LongEntry<K>> {
      * @return 添加成功则返回true，否则返回false。
      */
     public boolean zaddnx(final long score, @Nonnull final K member) {
+        Objects.requireNonNull(member);
         final Long oldScore = dict.putIfAbsent(member, score);
         if (oldScore == null) {
             zsl.zslInsert(score, member);
@@ -155,6 +157,7 @@ public class Object2LongZSet<K> implements Iterable<Object2LongEntry<K>> {
      * @return 更新后的值
      */
     public long zincrby(long increment, @Nonnull K member) {
+        Objects.requireNonNull(member);
         final Long oldScore = dict.get(member);
         final long score = oldScore == null ? increment : zsl.sum(oldScore, increment);
         zadd(score, member);
@@ -170,6 +173,7 @@ public class Object2LongZSet<K> implements Iterable<Object2LongEntry<K>> {
      * @return 更新后的值，如果更新失败，则返回0。
      */
     public long zincrbyxx(long increment, @Nonnull K member) {
+        Objects.requireNonNull(member);
         final Long oldScore = dict.get(member);
         if (oldScore == null) {
             return 0;
@@ -189,6 +193,7 @@ public class Object2LongZSet<K> implements Iterable<Object2LongEntry<K>> {
      * @return 如果成员存在，则返回对应的score，否则返回null。
      */
     public Long zrem(@Nonnull K member) {
+        Objects.requireNonNull(member);
         final Long oldScore = dict.remove(member);
         if (oldScore != null) {
             zsl.zslDelete(oldScore, member);
@@ -341,6 +346,7 @@ public class Object2LongZSet<K> implements Iterable<Object2LongEntry<K>> {
      * @return score
      */
     public Long zscore(@Nonnull K member) {
+        Objects.requireNonNull(member);
         return dict.get(member);
     }
 
@@ -355,6 +361,7 @@ public class Object2LongZSet<K> implements Iterable<Object2LongEntry<K>> {
      * @return 如果存在该成员，则返回该成员的排名(0-based)，否则返回-1
      */
     public int zrank(@Nonnull K member) {
+        Objects.requireNonNull(member);
         final Long score = dict.get(member);
         if (score == null) {
             return -1;
@@ -374,6 +381,7 @@ public class Object2LongZSet<K> implements Iterable<Object2LongEntry<K>> {
      * @return 如果存在该成员，则返回该成员的排名(0-based)，否则返回-1
      */
     public int zrevrank(@Nonnull K member) {
+        Objects.requireNonNull(member);
         final Long score = dict.get(member);
         if (score == null) {
             return -1;

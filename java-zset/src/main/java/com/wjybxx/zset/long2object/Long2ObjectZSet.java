@@ -107,6 +107,7 @@ public class Long2ObjectZSet<S> implements Iterable<Long2ObjectEntry<S>> {
      * @param member 成员id
      */
     public void zadd(final S score, final long member) {
+        Objects.requireNonNull(score);
         final S oldScore = dict.put(member, score);
         if (oldScore != null) {
             // Q: 为何不再判断分数相等？
@@ -124,6 +125,7 @@ public class Long2ObjectZSet<S> implements Iterable<Long2ObjectEntry<S>> {
      * @return 添加成功则返回true，否则返回false。
      */
     public boolean zaddnx(final S score, final long member) {
+        Objects.requireNonNull(score);
         final S oldScore = dict.putIfAbsent(member, score);
         if (oldScore == null) {
             zsl.zslInsert(score, member);
@@ -141,6 +143,7 @@ public class Long2ObjectZSet<S> implements Iterable<Long2ObjectEntry<S>> {
      * @return 更新后的值
      */
     public S zincrby(S increment, long member) {
+        Objects.requireNonNull(increment);
         final S oldScore = dict.get(member);
         final S score = oldScore == null ? increment : zsl.sum(oldScore, increment);
         zadd(score, member);
@@ -156,6 +159,7 @@ public class Long2ObjectZSet<S> implements Iterable<Long2ObjectEntry<S>> {
      * @return 更新后的值，如果更新失败，则返回null。
      */
     public S zincrbyxx(S increment, long member) {
+        Objects.requireNonNull(increment);
         final S oldScore = dict.get(member);
         if (oldScore == null) {
             return null;
