@@ -101,8 +101,10 @@ public class ZSetUtils {
      * @return level
      */
     public static int zslRandomLevel() {
+        ThreadLocalRandom random = ThreadLocalRandom.current();
         int level = 1;
-        while (level < ZSKIPLIST_MAXLEVEL && ThreadLocalRandom.current().nextFloat() < ZSKIPLIST_P) {
+        while (level < ZSKIPLIST_MAXLEVEL) {
+            if (!(random.nextFloat() < ZSKIPLIST_P)) break;
             level++;
         }
         return level;
