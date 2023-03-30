@@ -1,4 +1,4 @@
-package com.wjybxx.zset.object2long;
+package cn.wjybxx.zset.object2long;
 
 /**
  * {@link Object2LongZSet}中“score”范围描述信息 - specification模式

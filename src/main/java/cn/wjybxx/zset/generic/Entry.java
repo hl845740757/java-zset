@@ -14,7 +14,7 @@
  *  limitations under the License.
  */
 
-package com.wjybxx.zset.generic;
+package cn.wjybxx.zset.generic;
 
 /**
  * zset中单个成员信息

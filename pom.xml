@@ -6,13 +6,15 @@
 
     <groupId>io.github.hl845740757</groupId>
     <artifactId>java-zset</artifactId>
-    <version>1.4</version>
+    <version>1.5</version>
     <packaging>jar</packaging>
 
+    <!-- 这些属性在部署时不可缺失 -->
     <name>java-zset</name>
     <description>redis-zset-java</description>
     <url>https://github.com/hl845740757/java-zset</url>
 
+    <!-- 证书 -->
     <licenses>
         <license>
             <name>Apache License, Version 2.0</name>
@@ -56,7 +58,7 @@
         </dependency>
     </dependencies>
 
-    <!-- 还是需要指定编码 -->
+    <!-- mvn命令默认gbk编码导致中文注释异常，需要通过这里设置 -->
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>utf-8</project.reporting.outputEncoding>
@@ -115,23 +117,23 @@
                     <!-- 文档插件 -->
                     <!-- https://mvnrepository.com/artifact/org.apache.maven.plugins/maven-javadoc-plugin -->
                     <plugin>
-                    <groupId>org.apache.maven.plugins</groupId>
-                    <artifactId>maven-javadoc-plugin</artifactId>
-                    <version>3.4.1</version>
-                    <executions>
-                        <execution>
-                            <id>attach-javadocs</id>
-                            <phase>package</phase>
-                            <goals>
-                                <goal>jar</goal>
-                            </goals>
-                            <!-- 注释不是特别规范，避免打包中断 -->
-                            <configuration>
-                                <doclint>none</doclint>
-                            </configuration>
-                        </execution>
-                    </executions>
-                </plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <version>3.4.1</version>
+                        <executions>
+                            <execution>
+                                <id>attach-javadocs</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>jar</goal>
+                                </goals>
+                                <!-- 注释不是特别规范，避免打包中断 -->
+                                <configuration>
+                                    <doclint>none</doclint>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
 
                     <!-- gpg签名插件 -->
                     <plugin>
@@ -151,7 +153,7 @@
                         </executions>
                     </plugin>
 
-                    <!-- maven发布相关插件 -->
+                    <!-- maven部署相关插件 -->
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-deploy-plugin</artifactId>
@@ -164,6 +166,7 @@
                         <extensions>true</extensions>
                         <configuration>
                             <!-- serverId与mvn setting.xml 中的 server 对应-->
+                            <!-- 该插件用于自动close并release仓库，不使用插件则需要登录网页手动操作 -->
                             <serverId>sonatype-oss</serverId>
                             <nexusUrl>https://s01.oss.sonatype.org/</nexusUrl>
                             <autoReleaseAfterClose>true</autoReleaseAfterClose>

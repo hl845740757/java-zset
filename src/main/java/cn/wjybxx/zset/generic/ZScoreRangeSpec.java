@@ -1,4 +1,4 @@
-package com.wjybxx.zset.generic;
+package cn.wjybxx.zset.generic;
 
 /**
  * {@link GenericZSet}中“score”范围描述信息 - specification模式

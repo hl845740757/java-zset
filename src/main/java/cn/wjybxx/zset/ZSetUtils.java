@@ -14,7 +14,7 @@
  *  limitations under the License.
  */
 
-package com.wjybxx.zset;
+package cn.wjybxx.zset;
 
 import java.util.concurrent.ThreadLocalRandom;
 

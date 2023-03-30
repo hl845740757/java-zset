@@ -14,9 +14,9 @@
  *  limitations under the License.
  */
 
-package com.wjybxx.zset.long2object;
+package cn.wjybxx.zset.long2object;
 
-import com.wjybxx.zset.generic.Entry;
+import cn.wjybxx.zset.generic.Entry;
 
 /**
  * zset中单个成员信息

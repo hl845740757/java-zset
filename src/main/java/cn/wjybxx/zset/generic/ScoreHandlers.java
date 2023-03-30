@@ -14,7 +14,7 @@
  *  limitations under the License.
  */
 
-package com.wjybxx.zset.generic;
+package cn.wjybxx.zset.generic;
 
 /**
  * 存放一些常用的{@link ScoreHandler}实现。

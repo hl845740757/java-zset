@@ -14,7 +14,7 @@
  *  limitations under the License.
  */
 
-package com.wjybxx.zset.generic;
+package cn.wjybxx.zset.generic;
 
 import java.util.Comparator;
 

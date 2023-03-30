@@ -1,4 +1,4 @@
-package com.wjybxx.zset.object2long;
+package cn.wjybxx.zset.object2long;
 
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.LongStream;

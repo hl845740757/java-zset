@@ -14,9 +14,9 @@
  *  limitations under the License.
  */
 
-package com.wjybxx.zset.object2long;
+package cn.wjybxx.zset.object2long;
 
-import com.wjybxx.zset.generic.Entry;
+import cn.wjybxx.zset.generic.Entry;
 
 public interface Object2LongEntry<K> extends Entry<K, Long> {
 

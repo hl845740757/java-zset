@@ -14,7 +14,7 @@
  *  limitations under the License.
  */
 
-package com.wjybxx.zset.object2long;
+package cn.wjybxx.zset.object2long;
 
 /**
  * long类型的score处理器
