@@ -23,6 +23,8 @@ import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import javax.annotation.concurrent.NotThreadSafe;
 import java.util.*;
+import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 /**
  * key和score均为泛型类型的sorted set - 参考redis的zset实现
@@ -64,9 +66,22 @@ public class GenericZSet<K, S> implements Iterable<Entry<K, S>> {
      */
     private final Map<K, S> dict = new HashMap<>(ZSetUtils.INIT_CAPACITY);
     private final SkipList<K, S> zsl;
+    /**
+     * 分数区间段是否是小区间 -- 是否容易重复
+     * 你可以在运行时修改该值以开关{@link #zadd(Object, Object)}的优化
+     */
+    private boolean smallRange = false;
 
     private GenericZSet(Comparator<K> objComparator, ScoreHandler<S> scoreHandler) {
         this.zsl = new SkipList<>(objComparator, scoreHandler);
+    }
+
+    public boolean isSmallRange() {
+        return smallRange;
+    }
+
+    public void setSmallRange(boolean smallRange) {
+        this.smallRange = smallRange;
     }
 
     /**
@@ -129,8 +144,10 @@ public class GenericZSet<K, S> implements Iterable<Entry<K, S>> {
         Objects.requireNonNull(member);
         final S oldScore = dict.put(member, score);
         if (oldScore != null) {
-            // Q: 为何不再判断分数相等？
-            // A: 这里假定分数相等的情况很少出现，可减少大量无用的判断
+            // 一般情况下，我们认为zset的分数的重复概率较小（通常会有时间戳），因此不测试相等性
+            if (smallRange && zsl.compareScore(oldScore, score) == 0) {
+                return;
+            }
             zsl.zslDelete(oldScore, member);
         }
         zsl.zslInsert(score, member);
@@ -725,6 +742,19 @@ public class GenericZSet<K, S> implements Iterable<Entry<K, S>> {
     @Nonnull
     public Iterator<Entry<K, S>> fastIterator() {
         return fastzscan(0);
+    }
+
+    public Stream<Entry<K, S>> stream() {
+        Spliterator<Entry<K, S>> spliterator = Spliterators.spliterator(iterator(), dict.size(), 0);
+        return StreamSupport.stream(spliterator, false);
+    }
+
+    public List<Entry<K, S>> toList() {
+        ArrayList<Entry<K, S>> result = new ArrayList<>(dict.size());
+        for (Entry<K, S> ksEntry : this) {
+            result.add(ksEntry);
+        }
+        return result;
     }
     // endregion
 
@@ -1604,25 +1634,36 @@ public class GenericZSet<K, S> implements Iterable<Entry<K, S>> {
 
     private class FastZSetItr extends ZSetItr {
 
+        final ZSetEntry<K, S> fastEntry = new ZSetEntry<>();
+
         FastZSetItr(SkipListNode<K, S> next) {
             super(next);
         }
 
         @Override
         protected Entry<K, S> nextMember(SkipListNode<K, S> lastReturned) {
-            return lastReturned;
+            return fastEntry.init(lastReturned.obj, lastReturned.score);
         }
 
     }
 
     private static class ZSetEntry<K, S> implements Entry<K, S> {
 
-        private final K member;
-        private final S score;
+        private K member;
+        private S score;
+
+        ZSetEntry() {
+        }
 
         ZSetEntry(K member, S score) {
             this.member = member;
             this.score = score;
+        }
+
+        ZSetEntry<K, S> init(K member, S score) {
+            this.member = member;
+            this.score = score;
+            return this;
         }
 
         @Override
@@ -1633,6 +1674,23 @@ public class GenericZSet<K, S> implements Iterable<Entry<K, S>> {
         @Override
         public S getScore() {
             return score;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+
+            ZSetEntry<?, ?> zSetEntry = (ZSetEntry<?, ?>) o;
+            return member.equals(zSetEntry.member)
+                    && score.equals(zSetEntry.score);
+        }
+
+        @Override
+        public int hashCode() {
+            int result = member.hashCode();
+            result = 31 * result + score.hashCode();
+            return result;
         }
 
         @Override

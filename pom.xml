@@ -6,7 +6,7 @@
 
     <groupId>io.github.hl845740757</groupId>
     <artifactId>java-zset</artifactId>
-    <version>1.5</version>
+    <version>1.6</version>
     <packaging>jar</packaging>
 
     <!-- 这些属性在部署时不可缺失 -->
@@ -38,7 +38,7 @@
         <developer>
             <name>wjybxx</name>
             <email>845740757@qq.com</email>
-            <url>https://www.wxdfun.com</url>
+            <url>https://github.com/hl845740757</url>
             <timezone>+8</timezone>
         </developer>
     </developers>
@@ -58,10 +58,15 @@
         </dependency>
     </dependencies>
 
-    <!-- mvn命令默认gbk编码导致中文注释异常，需要通过这里设置 -->
+
     <properties>
+        <!-- mvn命令默认gbk编码导致中文注释异常，需要通过这里设置 -->
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>utf-8</project.reporting.outputEncoding>
+
+        <!-- java版本 -->
+        <compile.version>1.8</compile.version>
+        <target.version>1.8</target.version>
     </properties>
 
     <build>
@@ -73,8 +78,8 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.10.1</version>
                 <configuration>
-                    <source>1.8</source>
-                    <target>1.8</target>
+                    <source>${compile.version}</source>
+                    <target>${target.version}</target>
                     <encoding>UTF-8</encoding>
                     <skip>true</skip>
                 </configuration>

@@ -31,6 +31,8 @@ import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import javax.annotation.concurrent.NotThreadSafe;
 import java.util.*;
+import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 import static cn.wjybxx.zset.ZSetUtils.ZSKIPLIST_MAXLEVEL;
 
@@ -70,10 +72,24 @@ public class Long2ObjectZSet<S> implements Iterable<Long2ObjectEntry<S>> {
      */
     private final Long2ObjectMap<S> dict = new Long2ObjectOpenHashMap<>(ZSetUtils.INIT_CAPACITY);
     private final SkipList<S> zsl;
+    /**
+     * 分数区间段是否是小区间 -- 是否容易重复
+     * 你可以在运行时修改该值以开关{@link #zadd(Object, long)}的优化
+     */
+    private boolean smallRange = false;
 
     private Long2ObjectZSet(LongComparator objComparator, ScoreHandler<S> scoreHandler) {
         this.zsl = new SkipList<>(objComparator, scoreHandler);
     }
+
+    public boolean isSmallRange() {
+        return smallRange;
+    }
+
+    public void setSmallRange(boolean smallRange) {
+        this.smallRange = smallRange;
+    }
+
 
     /**
      * 创建一个键为long类型的zset
@@ -110,8 +126,10 @@ public class Long2ObjectZSet<S> implements Iterable<Long2ObjectEntry<S>> {
         Objects.requireNonNull(score);
         final S oldScore = dict.put(member, score);
         if (oldScore != null) {
-            // Q: 为何不再判断分数相等？
-            // A: 这里假定分数相等的情况很少出现，可减少大量无用的判断
+            // 一般情况下，我们认为zset的分数的重复概率较小（通常会有时间戳），因此不测试相等性
+            if (smallRange && zsl.compareScore(oldScore, score) == 0) {
+                return;
+            }
             zsl.zslDelete(oldScore, member);
         }
         zsl.zslInsert(score, member);
@@ -701,6 +719,20 @@ public class Long2ObjectZSet<S> implements Iterable<Long2ObjectEntry<S>> {
     public Iterator<Long2ObjectEntry<S>> fastIterator() {
         return fastzscan(0);
     }
+
+    public Stream<Long2ObjectEntry<S>> stream() {
+        Spliterator<Long2ObjectEntry<S>> spliterator = Spliterators.spliterator(iterator(), dict.size(), 0);
+        return StreamSupport.stream(spliterator, false);
+    }
+
+    public List<Long2ObjectEntry<S>> toList() {
+        ArrayList<Long2ObjectEntry<S>> result = new ArrayList<>(dict.size());
+        for (Long2ObjectEntry<S> sLong2ObjectEntry : this) {
+            result.add(sLong2ObjectEntry);
+        }
+        return result;
+    }
+
     // endregion
 
     /**
@@ -1580,25 +1612,36 @@ public class Long2ObjectZSet<S> implements Iterable<Long2ObjectEntry<S>> {
 
     private class FastZSetItr extends ZSetItr {
 
+        final ZSetEntry<S> fastEntry = new ZSetEntry<>();
+
         FastZSetItr(SkipListNode<S> next) {
             super(next);
         }
 
         @Override
         protected Long2ObjectEntry<S> nextMember(SkipListNode<S> lastReturned) {
-            return lastReturned;
+            return fastEntry.init(lastReturned.obj, lastReturned.score);
         }
 
     }
 
     public static class ZSetEntry<S> implements Long2ObjectEntry<S> {
 
-        private final long member;
-        private final S score;
+        private long member;
+        private S score;
+
+        ZSetEntry() {
+        }
 
         ZSetEntry(long member, S score) {
             this.member = member;
             this.score = score;
+        }
+
+        ZSetEntry<S> init(long member, S score) {
+            this.member = member;
+            this.score = score;
+            return this;
         }
 
         @Override
@@ -1608,6 +1651,23 @@ public class Long2ObjectZSet<S> implements Iterable<Long2ObjectEntry<S>> {
 
         public S getScore() {
             return score;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+
+            ZSetEntry<?> zSetEntry = (ZSetEntry<?>) o;
+            return member == zSetEntry.member
+                    && score.equals(zSetEntry.score);
+        }
+
+        @Override
+        public int hashCode() {
+            int result = (int) (member ^ (member >>> 32));
+            result = 31 * result + score.hashCode();
+            return result;
         }
 
         @Override

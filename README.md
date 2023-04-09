@@ -7,6 +7,18 @@ java-zset实现了redis zset中的常用命令，且结合java语言自身的特
 2. 可自定义ScoreComparator, KeyComparator，使得实现逆序排行榜更加容易，而不是让你总是使用reverse系列接口。
 此外，扩展zset较为容易，你可以在理解后自行添加需要的特性。
 
+### 引入项目
+```
+    <dependency>
+        <groupId>io.github.hl845740757</groupId>
+        <artifactId>java-zset</artifactId>
+        <version>1.6</version>
+    </dependency>
+```
+### 1.6
+[#3](https://github.com/hl845740757/java-zset/issues/3) 小分数区间段时zadd通过比较score是否相等，以减少增删操作。
+
+
 ### 1.4~1.5
 修改包名为个人域名(wjybxx.cn)，发布到maven中央仓库。  
 PS: 注册了1个10年的域名，不过暂时未备案，也未搭建网站。
