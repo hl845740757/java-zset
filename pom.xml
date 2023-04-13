@@ -6,7 +6,7 @@
 
     <groupId>io.github.hl845740757</groupId>
     <artifactId>java-zset</artifactId>
-    <version>1.6</version>
+    <version>1.6.1</version>
     <packaging>jar</packaging>
 
     <!-- 这些属性在部署时不可缺失 -->
@@ -53,7 +53,7 @@
         <!-- 基础类型集合库，主要用于支持long类型key -->
         <dependency>
             <groupId>it.unimi.dsi</groupId>
-            <artifactId>fastutil</artifactId>
+            <artifactId>fastutil-core</artifactId>
             <version>8.5.11</version>
         </dependency>
     </dependencies>
