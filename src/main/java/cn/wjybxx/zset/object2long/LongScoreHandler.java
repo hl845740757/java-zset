@@ -16,6 +16,8 @@
 
 package cn.wjybxx.zset.object2long;
 
+import cn.wjybxx.zset.generic.ScoreHandler;
+
 /**
  * long类型的score处理器
  *
@@ -23,7 +25,19 @@ package cn.wjybxx.zset.object2long;
  * @version 1.0
  * date - 2019/11/7
  */
-public interface LongScoreHandler {
+public interface LongScoreHandler extends ScoreHandler<Long> {
+
+    @Deprecated
+    @Override
+    default int compare(Long o1, Long o2) {
+        return compare(o1.longValue(), o2.longValue());
+    }
+
+    @Deprecated
+    @Override
+    default Long sum(Long oldScore, Long increment) {
+        return sum(oldScore.longValue(), increment.longValue());
+    }
 
     /**
      * 比较两个分数的大小
@@ -42,4 +56,5 @@ public interface LongScoreHandler {
      * @return sum
      */
     long sum(long oldScore, long increment);
+
 }

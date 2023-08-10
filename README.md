@@ -12,9 +12,13 @@ java-zset实现了redis zset中的常用命令，且结合java语言自身的特
     <dependency>
         <groupId>io.github.hl845740757</groupId>
         <artifactId>java-zset</artifactId>
-        <version>1.6</version>
+        <version>1.6.1</version>
     </dependency>
 ```
+
+### 依赖问题
+如果不想引入fastutil，可在添加maven依赖时排除fastutil的依赖，不过在排除后不可以使用Long2ObjectZset和Object2LongZSet， 只能使用基础的ZSet。
+
 ### 1.6
 [#3](https://github.com/hl845740757/java-zset/issues/3) 小分数区间段时zadd通过比较score是否相等，以减少增删操作。
 
